@@ -1,44 +1,33 @@
 // Report formatters module
-const { extractJsonFromResponse } = require('../core/ai-client');
 const { logWarn, logDebug } = require('../utils/logger');
+const { VERSION } = require('../utils/constants');
 
-const VERSION = '3.1.1';
-
-function formatAsMarkdown(content, metadata = {}, jsonAnalysis = null) {
-    // Extract JSON from response (supports both old and new schema)
-    let jsonData;
-    
-    // If jsonAnalysis is provided (from Schema Response), use it directly
-    if (jsonAnalysis && typeof jsonAnalysis === 'object') {
-        jsonData = jsonAnalysis;
-    } else if (typeof content === 'object' && content !== null) {
-        // If content is already a JSON object, use it directly
-        jsonData = content;
-    } else {
-        // Otherwise, extract from markdown content
-        jsonData = extractJsonFromResponse(content);
+function formatAsMarkdown(jsonData, metadata = {}) {
+    // jsonData is now always a JSON object (from Schema Response)
+    if (!jsonData || typeof jsonData !== 'object') {
+        logWarn('⚠️  Invalid JSON data provided to formatter');
+        return '# LegacyLens Report\n\nInvalid data provided.';
     }
     
-    // Support both new (Deep Audit) and old schema formats
-    const projectName = jsonData.projectName || jsonData.project_name || 'Unknown';
-    const complexityScore = jsonData.complexityScore !== undefined ? jsonData.complexityScore : 
-                          (jsonData.tech_debt_score !== undefined ? jsonData.tech_debt_score : 50);
-    const executiveSummary = jsonData.executiveSummary || 
-                            (jsonData.summary ? 
-                                `Project has ${jsonData.summary.total_loc?.toLocaleString() || 0} lines of code. Risk level: ${jsonData.summary.risk_level || 'Unknown'}.` : 
-                                'No summary available.');
+    // Strict schema: only use fields from ANALYSIS_SCHEMA (no fallback to old fields)
+    const { projectName, complexityScore, executiveSummary, deadCode, criticalIssues, refactoringPlan } = jsonData;
+    
+    // Validate required fields
+    if (!projectName || complexityScore === undefined || !executiveSummary) {
+        logWarn('⚠️  Missing required fields in JSON data');
+        return '# LegacyLens Report\n\nInvalid data structure. Missing required fields.';
+    }
     
     const date = metadata.date || new Date().toLocaleString('en-US');
     
     let md = `# 🛡️ LegacyLens Audit Report\n`;
-    md += `**Date:** ${date} | **Project:** ${projectName} | **Complexity Score:** ${complexityScore}/100\n\n`;
+    md += `**Version:** ${VERSION} | **Date:** ${date} | **Project:** ${projectName} | **Complexity Score:** ${complexityScore}/100\n\n`;
 
     md += `## 1. 📢 Executive Summary\n`;
     md += `${executiveSummary}\n\n`;
 
-    // Dead Code Section (Deep Audit Edition)
-    const deadCode = jsonData.deadCode || jsonData.isolated_modules || [];
-    if (deadCode.length > 0) {
+    // Dead Code Section (Deep Audit Edition) - use destructured variable
+    if (deadCode && deadCode.length > 0) {
         md += `## 2. 🧟 Dead Code Detection\n`;
         md += `> Remove these to instantly reduce technical debt.\n\n`;
         md += `| File | Target | Confidence | Reason |\n`;
@@ -56,9 +45,8 @@ function formatAsMarkdown(content, metadata = {}, jsonAnalysis = null) {
         md += `No dead code detected.\n\n`;
     }
 
-    // Critical Issues Section (Deep Audit Edition)
-    const criticalIssues = jsonData.criticalIssues || jsonData.critical_files || [];
-    if (criticalIssues.length > 0) {
+    // Critical Issues Section (Deep Audit Edition) - use destructured variable
+    if (criticalIssues && criticalIssues.length > 0) {
         md += `## 3. 🚨 Critical Issues\n`;
         criticalIssues.forEach(issue => {
             const issueDesc = issue.issue || issue.risk_explanation || 'Issue detected';
@@ -76,9 +64,8 @@ function formatAsMarkdown(content, metadata = {}, jsonAnalysis = null) {
         md += `No critical issues detected.\n\n`;
     }
 
-    // Refactoring Plan Section (Deep Audit Edition - Most Important)
-    const refactoringPlan = jsonData.refactoringPlan || [];
-    if (refactoringPlan.length > 0) {
+    // Refactoring Plan Section (Deep Audit Edition - Most Important) - use destructured variable
+    if (refactoringPlan && refactoringPlan.length > 0) {
         md += `## 4. 🛠️ Actionable Refactoring Plan\n`;
         refactoringPlan.forEach(step => {
             md += `### Step ${step.step}: ${step.action}\n`;
@@ -121,7 +108,7 @@ function formatAsMarkdown(content, metadata = {}, jsonAnalysis = null) {
     return md;
 }
 
-function formatAsJSON(content, metadata = {}) {
+function formatAsJSON(jsonData, metadata = {}) {
     const json = {
         version: VERSION,
         timestamp: new Date().toISOString(),
@@ -130,14 +117,14 @@ function formatAsJSON(content, metadata = {}) {
             filesCount: metadata.filesCount || null,
             executionTime: metadata.executionTime || null,
             contextSize: metadata.contextSize || null,
-            reportSize: content.length
+            reportSize: JSON.stringify(jsonData || {}).length
         },
-        report: content
+        report: jsonData
     };
     return JSON.stringify(json, null, 2);
 }
 
-function formatAsXML(content, metadata = {}) {
+function formatAsXML(jsonData, metadata = {}) {
     const escapeXML = (str) => {
         return String(str)
             .replace(/&/g, '&amp;')
@@ -146,6 +133,8 @@ function formatAsXML(content, metadata = {}) {
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&apos;');
     };
+
+    const reportContent = escapeXML(JSON.stringify(jsonData || {}, null, 2));
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <legacylens-report version="${VERSION}">
@@ -158,15 +147,17 @@ function formatAsXML(content, metadata = {}) {
         <reportSize>${metadata.reportSize || 0}</reportSize>
     </metadata>
     <report>
-        <![CDATA[${content}]]>
+        <![CDATA[${reportContent}]]>
     </report>
 </legacylens-report>`;
 
     return xml;
 }
 
-function formatAsPlainText(content, metadata = {}) {
-    let text = content
+function formatAsPlainText(jsonData, metadata = {}) {
+    // Convert JSON to markdown first, then to plain text
+    const markdown = formatAsMarkdown(jsonData, metadata);
+    let text = markdown
         .replace(/^#+\s+(.*)$/gm, '$1\n')
         .replace(/\*\*(.*?)\*\*/g, '$1')
         .replace(/\*(.*?)\*/g, '$1')
@@ -182,7 +173,7 @@ ${'='.repeat(80)}
 Version: ${VERSION}
 Model: ${metadata.model || 'unknown'}
 Files Analyzed: ${metadata.filesCount || 0}
-Date: ${metadata.date || new Date().toLocaleString('uk-UA')}
+Date: ${metadata.date || new Date().toLocaleString('en-US')}
 Execution Time: ${metadata.executionTime || '0s'}
 Context Size: ${metadata.contextSize || 0} bytes
 Report Size: ${metadata.reportSize || 0} bytes
@@ -193,12 +184,12 @@ ${'='.repeat(80)}
     return header + text;
 }
 
-function formatAsPDF(content, metadata = {}, jsonAnalysis = null) {
+function formatAsPDF(jsonData, metadata = {}) {
     // PDF is generated via HTML
     // Use dynamic require to avoid circular dependency
     // This is loaded only when PDF format is requested
     const { formatAsHTML } = require('./html-template');
-    const html = formatAsHTML(content, metadata, jsonAnalysis);
+    const html = formatAsHTML(jsonData, metadata);
     
     return `<!DOCTYPE html>
 <html>

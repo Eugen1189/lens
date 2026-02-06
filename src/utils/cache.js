@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { VERSION } = require('./constants');
 
 async function calculateProjectHash(files) {
     // Create hash based on file paths and content (not just size)
@@ -39,7 +40,8 @@ function saveCache(projectPath, projectHash, report, model) {
             hash: projectHash,
             report: report,
             model: model,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            version: VERSION
         };
         fs.writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf-8');
     } catch (error) {

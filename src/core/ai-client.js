@@ -116,44 +116,6 @@ const DEFAULT_MODELS = [
     "gemini-2.5-flash-lite"
 ];
 
-function extractJsonFromResponse(text) {
-    try {
-        // Try to find JSON in markdown code block
-        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[1]) {
-            return JSON.parse(jsonMatch[1]);
-        }
-        // Try to find JSON without markdown
-        const lastBrace = text.lastIndexOf('}');
-        const firstBrace = text.indexOf('{');
-        if (lastBrace > -1 && firstBrace > -1 && lastBrace > firstBrace) {
-            const jsonStr = text.substring(firstBrace, lastBrace + 1);
-            return JSON.parse(jsonStr);
-        }
-    } catch (e) {
-        logWarn('⚠️  Failed to parse JSON data for charts. Using default values.');
-        logDebug(`JSON parsing error: ${e.message}`);
-    }
-    // Fallback data
-    return {
-        project_name: "Unknown Project",
-        version: "2.5.0",
-        summary: {
-            total_loc: 0,
-            risk_level: "Unknown",
-            estimated_refactor_time: "0h"
-        },
-        tech_debt_score: 50,
-        critical_files: [],
-        dependencies: {
-            nodes: [],
-            links: []
-        },
-        circular_dependencies: [],
-        isolated_modules: []
-    };
-}
-
 async function generateMockResponse(projectPath, files, projectStats) {
     const mockComplexityScore = files.length > 50 ? 75 : files.length > 20 ? 60 : 45;
     
@@ -417,34 +379,24 @@ async function callGeminiAPI(apiKey, modelName, prompt, options = {}) {
     }
 
     // With Schema Response, we get clean JSON directly
+    const responseText = result.response.text();
+    
+    // Direct parsing - Schema Response guarantees valid JSON
+    let jsonData;
     try {
-        const responseText = result.response.text();
-        // Try to parse as JSON (should be clean JSON now)
-        const jsonData = JSON.parse(responseText);
-        
-        // Generate simple markdown summary for display (detailed formatting is done in formatters.js)
-        const markdownSummary = `# LegacyLens Analysis\n\n**Project**: ${jsonData.projectName || 'Unknown'}\n**Complexity Score**: ${jsonData.complexityScore !== undefined ? jsonData.complexityScore : 50}/100\n\n${jsonData.executiveSummary || 'Analysis complete.'}\n\n\`\`\`json\n${JSON.stringify(jsonData, null, 2)}\n\`\`\``;
-        
-        // Return both: markdown summary for display and JSON for parsing
-        return {
-            text: markdownSummary,
-            json: jsonData,
-            model: usedModel
-        };
-    } catch (parseError) {
-        // Fallback: if JSON parsing fails, return text as-is
-        logWarn('⚠️  Failed to parse JSON response, using text as fallback');
-        logDebug(`Parse error: ${parseError.message}`);
-        return {
-            text: result.response.text(),
-            json: null,
-            model: usedModel
-        };
+        jsonData = JSON.parse(responseText);
+    } catch (e) {
+        throw new Error(`AI returned invalid JSON: ${responseText.substring(0, 200)}...`);
     }
+    
+    // Return only JSON (formatters will handle display)
+    return {
+        json: jsonData,
+        model: usedModel
+    };
 }
 
 module.exports = {
-    extractJsonFromResponse,
     generateMockResponse,
     buildPrompt,
     callGeminiAPI,

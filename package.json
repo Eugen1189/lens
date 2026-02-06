@@ -1,6 +1,6 @@
 {
   "name": "legacylens-cli",
-  "version": "3.2.0",
+  "version": "3.4.0",
   "description": "AI-powered CLI to analyze and cleanup legacy code. Features: .gitignore support, Schema Response, Auto-fix ready.",
   "main": "legacylens-cli.js",
   "bin": {

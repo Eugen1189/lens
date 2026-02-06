@@ -10,11 +10,11 @@ const { calculateProjectHash, loadCache, saveCache } = require('./utils/cache');
 const { analyzeDependencies, calculateCodeMetrics } = require('./utils/analyzer');
 const { parseGitignore } = require('./core/gitignore');
 const { scanProject } = require('./core/scanner');
-const { buildPrompt, generateMockResponse, callGeminiAPI, DEFAULT_MODELS, extractJsonFromResponse } = require('./core/ai-client');
+const { buildPrompt, generateMockResponse, callGeminiAPI, DEFAULT_MODELS } = require('./core/ai-client');
 const { formatAsMarkdown, formatAsJSON, formatAsXML, formatAsPlainText, formatAsPDF } = require('./reports/formatters');
 const { formatAsHTML } = require('./reports/html-template');
 
-const VERSION = '3.2.0';
+const { VERSION } = require('./utils/constants');
 
 // Get API key from environment (used as fallback, can be overridden by options/config)
 const getDefaultApiKey = () => process.env.GEMINI_API_KEY || process.env.LEGACYLENS_API_KEY;
@@ -184,10 +184,9 @@ async function analyzeProject(options) {
     }
 
     // Cache check
-    let response = null;
+    let jsonAnalysis = null; // Store JSON analysis (from Schema Response)
     let usedModel = selectedModel;
     let projectHash = null;
-    let jsonAnalysis = null; // Store parsed JSON if available (from Schema Response)
     let projectContext = null; // Store project context for statistics
 
     if (!forceRefresh) {
@@ -202,8 +201,8 @@ async function analyzeProject(options) {
             logInfo(`   Last analysis: ${new Date(cache.timestamp).toLocaleString('en-US')}`, 'gray');
             logInfo(`   Model: ${cache.model}\n`, 'gray');
 
-            // Use cached result
-            response = cache.report;
+            // Use cached result (should be JSON)
+            jsonAnalysis = cache.report;
             usedModel = cache.model;
             logInfo('✅ Using cached result\n', 'green');
             logDebug('Skipped AI request due to cache');
@@ -211,7 +210,7 @@ async function analyzeProject(options) {
     }
 
     // If cache not found or force refresh - perform new analysis
-    if (!response) {
+    if (!jsonAnalysis) {
         if (forceRefresh) {
             logWarn('🔄 Force refresh (--force)\n');
         }
@@ -295,20 +294,16 @@ async function analyzeProject(options) {
         try {
             if (options.mockAi) {
                 usedModel = 'mock';
-                response = await generateMockResponse(absolutePath, files, projectStats);
+                jsonAnalysis = await generateMockResponse(absolutePath, files, projectStats);
             } else {
                 const result = await callGeminiAPI(finalApiKey, finalModel, prompt, {
                     requestTimeout,
                     maxRetries,
                     retryDelay
                 });
-                response = result.text;
+                jsonAnalysis = result.json;
                 usedModel = result.model;
-                // Use structured JSON if available (from Schema Response)
-                if (result.json) {
-                    jsonAnalysis = result.json;
-                    logDebug('✅ Using structured JSON from Schema Response');
-                }
+                logDebug('✅ Using structured JSON from Schema Response');
             }
 
             // Save to cache
@@ -316,7 +311,7 @@ async function analyzeProject(options) {
             if (!projectHash) {
                 projectHash = await calculateProjectHash(files);
             }
-            saveCache(absolutePath, projectHash, response, usedModel);
+            saveCache(absolutePath, projectHash, jsonAnalysis, usedModel);
             logInfo('💾 Result saved to cache\n', 'gray');
 
         } catch (error) {
@@ -334,12 +329,13 @@ async function analyzeProject(options) {
     // Prepare context for statistics (use actual context size, not truncated)
     const projectContextForStats = projectContext || JSON.stringify(files, null, 2);
 
-    // Output result
-    if (!options.quiet) {
+    // Output result (generate markdown summary for console display)
+    if (!options.quiet && jsonAnalysis) {
         console.log(colorize('\n================================================================================', 'cyan'));
         console.log(colorize('📊 ANALYSIS RESULT', 'cyan'));
         console.log(colorize('================================================================================\n', 'cyan'));
-        console.log(response);
+        const summary = formatAsMarkdown(jsonAnalysis, {});
+        console.log(summary);
     }
 
     // Format and save report
@@ -352,33 +348,31 @@ async function analyzeProject(options) {
             hour: '2-digit', minute: '2-digit'
         }),
         contextSize: projectContextForStats.length,
-        reportSize: response.length
+        reportSize: JSON.stringify(jsonAnalysis || {}).length
     };
 
     let formattedOutput;
     switch (outputFormat.toLowerCase()) {
         case 'html':
-            // Pass jsonAnalysis if available (from Schema Response)
-            formattedOutput = formatAsHTML(response, metadata, jsonAnalysis);
+            formattedOutput = formatAsHTML(jsonAnalysis, metadata);
             break;
         case 'json':
-            formattedOutput = formatAsJSON(response, metadata);
+            formattedOutput = formatAsJSON(jsonAnalysis, metadata);
             break;
         case 'xml':
-            formattedOutput = formatAsXML(response, metadata);
+            formattedOutput = formatAsXML(jsonAnalysis, metadata);
             break;
         case 'txt':
         case 'text':
-            formattedOutput = formatAsPlainText(response, metadata);
+        case 'plain':
+            formattedOutput = formatAsPlainText(jsonAnalysis, metadata);
             break;
         case 'pdf':
-            // Pass jsonAnalysis if available (from Schema Response)
-            formattedOutput = formatAsPDF(response, metadata, jsonAnalysis);
+            formattedOutput = formatAsPDF(jsonAnalysis, metadata);
             break;
         case 'markdown':
         default:
-            // Pass jsonAnalysis if available (from Schema Response) for better formatting
-            formattedOutput = formatAsMarkdown(response, metadata, jsonAnalysis);
+            formattedOutput = formatAsMarkdown(jsonAnalysis, metadata);
             break;
     }
 
@@ -412,6 +406,9 @@ async function analyzeProject(options) {
         console.log(`   ${colorize('Execution time:', 'gray')} ${colorize(`${executionTime}s`, 'bright')}`);
         console.log(`   ${colorize('Context size:', 'gray')} ${colorize((projectContextForStats.length / 1024).toFixed(2) + ' KB', 'bright')}`);
         console.log(`   ${colorize('Report size:', 'gray')} ${colorize((formattedOutput.length / 1024).toFixed(2) + ' KB', 'bright')}`);
+        if (jsonAnalysis) {
+            console.log(`   ${colorize('JSON data:', 'gray')} ${colorize('✓ Valid', 'green')}`);
+        }
         console.log('');
     }
 }

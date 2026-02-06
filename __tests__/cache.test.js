@@ -86,11 +86,11 @@ describe('Кешування та хешування', () => {
             expect(fs.existsSync(cachePath)).toBe(true);
             
             const cache = JSON.parse(fs.readFileSync(cachePath, 'utf-8'));
-            expect(cache.projectHash).toBe(projectHash);
+            expect(cache.hash).toBe(projectHash);
             expect(cache.report).toBe(report);
             expect(cache.model).toBe(model);
-            expect(cache.version).toBe('2.1.0');
-            expect(cache.lastAnalysis).toBeDefined();
+            expect(cache.version).toBe(VERSION);
+            expect(cache.timestamp).toBeDefined();
         });
 
         test('перезаписує існуючий кеш', () => {
@@ -101,7 +101,7 @@ describe('Кешування та хешування', () => {
             saveCache(testDir, hash2, 'Report 2', 'model2');
 
             const cache = loadCache(testDir);
-            expect(cache.projectHash).toBe(hash2);
+            expect(cache.hash).toBe(hash2);
             expect(cache.report).toBe('Report 2');
         });
     });
@@ -109,11 +109,11 @@ describe('Кешування та хешування', () => {
     describe('loadCache', () => {
         test('завантажує кеш з файлу', () => {
             const cacheData = {
-                projectHash: 'test-hash',
-                lastAnalysis: new Date().toISOString(),
+                hash: 'test-hash',
+                timestamp: Date.now(),
                 report: 'Test report',
                 model: 'gemini-2.5-flash',
-                version: '2.0.0'
+                version: VERSION
             };
 
             const cachePath = path.join(testDir, '.legacylens-cache.json');
@@ -122,7 +122,7 @@ describe('Кешування та хешування', () => {
             const cache = loadCache(testDir);
 
             expect(cache).not.toBeNull();
-            expect(cache.projectHash).toBe('test-hash');
+            expect(cache.hash).toBe('test-hash');
             expect(cache.report).toBe('Test report');
             expect(cache.model).toBe('gemini-2.5-flash');
         });
@@ -151,15 +151,15 @@ describe('Кешування та хешування', () => {
             const model = 'gemini-2.5-flash';
 
             // Зберігаємо
-            const saveResult = saveCache(testDir, projectHash, report, model);
-            expect(saveResult).toBe(true);
+            saveCache(testDir, projectHash, report, model);
 
             // Завантажуємо
             const loadedCache = loadCache(testDir);
             expect(loadedCache).not.toBeNull();
-            expect(loadedCache.projectHash).toBe(projectHash);
+            expect(loadedCache.hash).toBe(projectHash);
             expect(loadedCache.report).toBe(report);
             expect(loadedCache.model).toBe(model);
+            expect(loadedCache.version).toBe(VERSION);
         });
 
         test('хеш змінюється при зміні файлів', async () => {

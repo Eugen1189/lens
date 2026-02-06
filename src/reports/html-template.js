@@ -1,21 +1,26 @@
 // HTML template module
 const { marked } = require('marked');
-const { extractJsonFromResponse } = require('../core/ai-client');
+const { VERSION } = require('../utils/constants');
 
-function formatAsHTML(content, metadata = {}, jsonAnalysis = null) {
-    // Use provided JSON analysis (from Schema Response) or extract from content
-    const jsonData = jsonAnalysis || extractJsonFromResponse(content);
+function formatAsHTML(jsonData, metadata = {}) {
+    // jsonData is now always a JSON object (from Schema Response)
+    if (!jsonData || typeof jsonData !== 'object') {
+        return '<html><body><h1>LegacyLens Report</h1><p>Invalid data provided.</p></body></html>';
+    }
     
-    // Remove JSON block from content
-    const cleanContent = content.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
+    // Strict schema: only use fields from ANALYSIS_SCHEMA
+    const { projectName, complexityScore, executiveSummary, deadCode, criticalIssues, refactoringPlan } = jsonData;
+    
+    // Validate required fields
+    if (!projectName || complexityScore === undefined || !executiveSummary) {
+        return '<html><body><h1>LegacyLens Report</h1><p>Invalid data structure. Missing required fields.</p></body></html>';
+    }
+    
+    // Generate markdown summary for HTML display
+    const markdown = require('./formatters').formatAsMarkdown(jsonData, metadata);
     
     // Convert Markdown to HTML using marked library (professional parser)
-    const htmlContent = marked.parse(cleanContent);
-
-    // Normalize data structure (support both old and new schema)
-    const complexityScore = jsonData.complexityScore !== undefined ? jsonData.complexityScore : 
-                           (jsonData.tech_debt_score !== undefined ? jsonData.tech_debt_score : 
-                           (jsonData.risk_score !== undefined ? 100 - jsonData.risk_score : 50));
+    const htmlContent = marked.parse(markdown);
     
     // Calculate health score (inverse of complexity: 0 = perfect, 100 = chaos)
     const healthScore = 100 - complexityScore;
@@ -30,20 +35,14 @@ function formatAsHTML(content, metadata = {}, jsonAnalysis = null) {
         statusColor = '#f59e0b'; // Amber
         statusText = 'Medium Risk';
     }
-
-    // Support both new (Deep Audit) and old schema formats
-    const projectName = jsonData.projectName || jsonData.project_name || 'Unknown Project';
-    const executiveSummary = jsonData.executiveSummary || (jsonData.summary ? 
-        `Project has ${jsonData.summary.total_loc?.toLocaleString() || 0} lines of code. Risk level: ${jsonData.summary.risk_level || 'Unknown'}.` : 
-        'No summary available.');
     
-    // Convert new format to old format for HTML template compatibility
-    const criticalFiles = jsonData.criticalIssues ? jsonData.criticalIssues.map(issue => ({
+    // Convert new format for HTML template compatibility
+    const criticalFiles = (criticalIssues || []).map(issue => ({
         file: issue.file,
         complexity: issue.severity === 'Critical' ? 90 : issue.severity === 'High' ? 70 : 50,
         issues: [issue.issue],
         risk_explanation: issue.recommendation
-    })) : (jsonData.critical_files || []);
+    }));
     
     const topRiskyFiles = criticalFiles.slice(0, 5).map(f => ({
         name: f.file,
@@ -52,7 +51,7 @@ function formatAsHTML(content, metadata = {}, jsonAnalysis = null) {
 
     const data = {
         project_name: projectName,
-        version: jsonData.version || '3.1.0',
+        version: VERSION,
         summary: jsonData.summary || {
             total_loc: 0,
             risk_level: complexityScore > 70 ? 'High' : complexityScore > 40 ? 'Medium' : 'Low',
