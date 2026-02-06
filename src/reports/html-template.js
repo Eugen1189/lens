@@ -1,4 +1,5 @@
 // HTML template module
+const { marked } = require('marked');
 const { extractJsonFromResponse } = require('../core/ai-client');
 
 function formatAsHTML(content, metadata = {}, jsonAnalysis = null) {
@@ -8,30 +9,8 @@ function formatAsHTML(content, metadata = {}, jsonAnalysis = null) {
     // Remove JSON block from content
     const cleanContent = content.replace(/```json\s*[\s\S]*?\s*```/g, '').trim();
     
-    // Convert Markdown to HTML (simple converter)
-    let htmlContent = cleanContent
-        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/`([^`]+)`/g, '<code>$1</code>')
-        .replace(/```([\s\S]*?)```/g, (match, code) => {
-            if (!code.includes('json')) {
-                return `<pre><code>${code.trim()}</code></pre>`;
-            }
-            return '';
-        })
-        .replace(/^\* (.*$)/gim, '<li>$1</li>')
-        .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2">$1</a>');
-    
-    // Wrap lists
-    htmlContent = htmlContent.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
-    
-    // Wrap paragraphs
-    htmlContent = '<p>' + htmlContent + '</p>';
+    // Convert Markdown to HTML using marked library (professional parser)
+    const htmlContent = marked.parse(cleanContent);
 
     // Normalize data structure (support both old and new schema)
     const complexityScore = jsonData.complexityScore !== undefined ? jsonData.complexityScore : 

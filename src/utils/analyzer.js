@@ -71,10 +71,15 @@ function calculateCodeMetrics(files) {
         languages: {},
         averageFileSize: 0,
         largestFile: null,
-        smallestFile: null
+        smallestFile: null,
+        totalSize: 0,
+        totalComments: 0,
+        hasComments: false,
+        commentRatio: 0
     };
 
     let totalSize = 0;
+    let totalComments = 0;
     let maxSize = 0;
     let minSize = Infinity;
 
@@ -86,6 +91,12 @@ function calculateCodeMetrics(files) {
 
         metrics.totalLines += lines;
         totalSize += size;
+
+        // Real comment counting: // or /* */
+        const commentMatches = content.match(/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/g);
+        if (commentMatches) {
+            totalComments += commentMatches.length;
+        }
 
         if (size > maxSize) {
             maxSize = size;
@@ -105,6 +116,10 @@ function calculateCodeMetrics(files) {
     });
 
     metrics.averageFileSize = files.length > 0 ? Math.round(totalSize / files.length) : 0;
+    metrics.totalSize = totalSize;
+    metrics.totalComments = totalComments;
+    metrics.hasComments = totalComments > 0;
+    metrics.commentRatio = metrics.totalLines > 0 ? parseFloat((totalComments / metrics.totalLines).toFixed(2)) : 0;
 
     return metrics;
 }

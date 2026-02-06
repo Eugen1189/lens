@@ -14,7 +14,7 @@ const { buildPrompt, generateMockResponse, callGeminiAPI, DEFAULT_MODELS, extrac
 const { formatAsMarkdown, formatAsJSON, formatAsXML, formatAsPlainText, formatAsPDF } = require('./reports/formatters');
 const { formatAsHTML } = require('./reports/html-template');
 
-const VERSION = '3.1.2';
+const VERSION = '3.2.0';
 
 // Get API key from environment (used as fallback, can be overridden by options/config)
 const getDefaultApiKey = () => process.env.GEMINI_API_KEY || process.env.LEGACYLENS_API_KEY;
@@ -188,6 +188,7 @@ async function analyzeProject(options) {
     let usedModel = selectedModel;
     let projectHash = null;
     let jsonAnalysis = null; // Store parsed JSON if available (from Schema Response)
+    let projectContext = null; // Store project context for statistics
 
     if (!forceRefresh) {
         logDebug('Calculating project hash for cache check...');
@@ -215,35 +216,70 @@ async function analyzeProject(options) {
             logWarn('🔄 Force refresh (--force)\n');
         }
 
-        // Prepare context
+        // Prepare context safely (without breaking JSON)
         logInfo('📝 Preparing context for AI...', 'yellow');
-        logDebug(`File size before truncation: ${JSON.stringify(files).length} characters`);
-        const projectContext = JSON.stringify(files, null, 2).substring(0, finalConfig.maxContextSize);
+        
+        // 1. Sort files: important files first (package.json, README, src/)
+        files.sort((a, b) => {
+            const score = (f) => {
+                if (f.path.includes('package.json')) return 2;
+                if (f.path.includes('README')) return 1;
+                return 0;
+            };
+            return score(b) - score(a);
+        });
+
+        // 2. Safe context formation
+        const MAX_CONTEXT = finalConfig.maxContextSize || 1000000;
+        const contextFiles = [];
+        let currentSize = 0;
+        let skippedFiles = 0;
+
+        for (const file of files) {
+            // Simplified structure to save tokens
+            const fileEntry = { path: file.path, content: file.content };
+            const entryJson = JSON.stringify(fileEntry);
+            
+            if (currentSize + entryJson.length < MAX_CONTEXT) {
+                contextFiles.push(fileEntry);
+                currentSize += entryJson.length;
+            } else {
+                skippedFiles++;
+                logDebug(`⚠️ Skipping ${file.path} (context limit reached)`);
+            }
+        }
+
+        projectContext = JSON.stringify(contextFiles, null, 2);
         logInfo(' ✅ Ready\n', 'green');
         const contextSizeKB = projectContext.length / 1024;
         const contextSizeMB = contextSizeKB / 1024;
         const contextSizeStr = contextSizeMB >= 1
             ? `${contextSizeMB.toFixed(2)} MB`
             : `${contextSizeKB.toFixed(2)} KB`;
-        logDebug(`Context size after truncation: ${projectContext.length} characters (${contextSizeStr})`);
+        logDebug(`Context size: ${projectContext.length} characters (${contextSizeStr})`);
+        if (skippedFiles > 0) {
+            logWarn(`⚠️  ${skippedFiles} file(s) skipped due to context size limit`);
+        }
 
         // Analyze dependencies and metrics
         logDebug('Analyzing project dependencies and metrics...');
         const dependencies = analyzeDependencies(absolutePath);
         const codeMetrics = calculateCodeMetrics(files);
 
-        // Project statistics
+        // Project statistics (using real metrics from analyzer)
         const projectStats = {
             filesCount: files.length,
-            totalSize: codeMetrics.totalLines * 50, // Rough estimate
+            totalSize: codeMetrics.totalSize, // Real size in bytes
             totalLines: codeMetrics.totalLines,
+            totalComments: codeMetrics.totalComments,
             languages: Object.keys(codeMetrics.languages),
             languageDistribution: codeMetrics.languages,
             averageFileSize: Math.round(codeMetrics.averageFileSize || 0),
             largestFiles: codeMetrics.largestFile ? [{ path: codeMetrics.largestFile.path, size: codeMetrics.largestFile.size }] : [],
             hasTests: dependencies.hasTests,
             testsCount: dependencies.hasTests ? 1 : 0,
-            hasComments: true, // Simplified
+            hasComments: codeMetrics.hasComments,
+            commentRatio: codeMetrics.commentRatio,
             dependencies
         };
 
@@ -295,8 +331,8 @@ async function analyzeProject(options) {
     const endTime = Date.now();
     const executionTime = ((endTime - startTime) / 1000).toFixed(2);
 
-    // Prepare context for statistics
-    const projectContextForStats = JSON.stringify(files, null, 2).substring(0, finalConfig.maxContextSize);
+    // Prepare context for statistics (use actual context size, not truncated)
+    const projectContextForStats = projectContext || JSON.stringify(files, null, 2);
 
     // Output result
     if (!options.quiet) {
