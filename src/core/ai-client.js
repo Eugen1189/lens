@@ -1,0 +1,452 @@
+// AI Client module for Gemini API interaction
+const { GoogleGenerativeAI, SchemaType } = require("@google/generative-ai");
+const path = require('path');
+const { logInfo, logWarn, logDebug, colorize } = require('../utils/logger');
+
+// Schema definition for structured JSON response (Deep Audit Edition v3.1.0)
+const ANALYSIS_SCHEMA = {
+    type: SchemaType.OBJECT,
+    properties: {
+        projectName: {
+            type: SchemaType.STRING,
+            description: "Name of the analyzed project"
+        },
+        complexityScore: {
+            type: SchemaType.NUMBER,
+            description: "0-100 score, where 100 is chaos"
+        },
+        executiveSummary: {
+            type: SchemaType.STRING,
+            description: "Brief executive summary of the codebase health"
+        },
+        deadCode: {
+            type: SchemaType.ARRAY,
+            description: "List of dead code items (unused functions, variables, files)",
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    file: {
+                        type: SchemaType.STRING,
+                        description: "File path containing dead code"
+                    },
+                    lineOrFunction: {
+                        type: SchemaType.STRING,
+                        description: "Specific line number or function name (e.g., 'line 42' or 'function oldHelper()')"
+                    },
+                    confidence: {
+                        type: SchemaType.STRING,
+                        enum: ["High", "Medium"],
+                        description: "Confidence level that this is truly dead code"
+                    },
+                    reason: {
+                        type: SchemaType.STRING,
+                        description: "Why this code is considered dead (e.g., 'Never called', 'Commented out', 'Unused import')"
+                    }
+                },
+                required: ["file", "lineOrFunction", "confidence", "reason"]
+            }
+        },
+        criticalIssues: {
+            type: SchemaType.ARRAY,
+            description: "Critical issues requiring immediate attention",
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    file: {
+                        type: SchemaType.STRING,
+                        description: "File path with the issue"
+                    },
+                    issue: {
+                        type: SchemaType.STRING,
+                        description: "Description of the issue (e.g., 'Hardcoded API key', 'SQL injection risk', 'Infinite loop')"
+                    },
+                    severity: {
+                        type: SchemaType.STRING,
+                        enum: ["Critical", "High", "Medium"],
+                        description: "Severity level of the issue"
+                    },
+                    recommendation: {
+                        type: SchemaType.STRING,
+                        description: "Specific recommendation to fix the issue"
+                    }
+                },
+                required: ["file", "issue", "severity", "recommendation"]
+            }
+        },
+        refactoringPlan: {
+            type: SchemaType.ARRAY,
+            description: "Step-by-step refactoring plan with concrete code examples",
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    step: {
+                        type: SchemaType.NUMBER,
+                        description: "Step number in the refactoring plan"
+                    },
+                    action: {
+                        type: SchemaType.STRING,
+                        description: "Action to take (e.g., 'Extract function', 'Replace callback with async/await', 'Remove duplicate code')"
+                    },
+                    codeSnippetBefore: {
+                        type: SchemaType.STRING,
+                        description: "Code before refactoring (actual code snippet)"
+                    },
+                    codeSnippetAfter: {
+                        type: SchemaType.STRING,
+                        description: "Code after refactoring (improved version)"
+                    },
+                    benefit: {
+                        type: SchemaType.STRING,
+                        description: "Benefit of this refactoring (e.g., 'Reduces complexity', 'Improves readability', 'Fixes memory leak')"
+                    }
+                },
+                required: ["step", "action", "codeSnippetBefore", "codeSnippetAfter", "benefit"]
+            }
+        }
+    },
+    required: ["projectName", "complexityScore", "executiveSummary", "deadCode", "criticalIssues", "refactoringPlan"]
+};
+
+const DEFAULT_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-flash-latest",
+    "gemini-pro-latest",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite"
+];
+
+function extractJsonFromResponse(text) {
+    try {
+        // Try to find JSON in markdown code block
+        const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+        if (jsonMatch && jsonMatch[1]) {
+            return JSON.parse(jsonMatch[1]);
+        }
+        // Try to find JSON without markdown
+        const lastBrace = text.lastIndexOf('}');
+        const firstBrace = text.indexOf('{');
+        if (lastBrace > -1 && firstBrace > -1 && lastBrace > firstBrace) {
+            const jsonStr = text.substring(firstBrace, lastBrace + 1);
+            return JSON.parse(jsonStr);
+        }
+    } catch (e) {
+        logWarn('⚠️  Failed to parse JSON data for charts. Using default values.');
+        logDebug(`JSON parsing error: ${e.message}`);
+    }
+    // Fallback data
+    return {
+        project_name: "Unknown Project",
+        version: "2.5.0",
+        summary: {
+            total_loc: 0,
+            risk_level: "Unknown",
+            estimated_refactor_time: "0h"
+        },
+        tech_debt_score: 50,
+        critical_files: [],
+        dependencies: {
+            nodes: [],
+            links: []
+        },
+        circular_dependencies: [],
+        isolated_modules: []
+    };
+}
+
+async function generateMockResponse(projectPath, files, projectStats) {
+    const mockComplexityScore = files.length > 50 ? 75 : files.length > 20 ? 60 : 45;
+    
+    return [
+        '# 📊 LegacyLens (Mock) - Deep Audit Report',
+        '',
+        '## Executive Summary',
+        'This is a mock analysis for testing purposes. The codebase appears to be a CLI tool with modular structure.',
+        '',
+        '## Dead Code',
+        '- No dead code detected in mock mode.',
+        '',
+        '## Critical Issues',
+        '- **Mock Mode**: This analysis was generated without calling the AI API.',
+        '',
+        '## Refactoring Plan',
+        '- Add comprehensive test coverage.',
+        '- Implement error handling improvements.',
+        '',
+        '```json',
+        JSON.stringify({
+            projectName: path.basename(projectPath || 'Unknown'),
+            complexityScore: mockComplexityScore,
+            executiveSummary: "Mock analysis: CLI tool with modular architecture. Code quality appears moderate with room for improvement in test coverage and error handling.",
+            deadCode: files.slice(0, 2).map(f => ({
+                file: f.path,
+                lineOrFunction: "function unusedHelper()",
+                confidence: "Medium",
+                reason: "Function defined but never called in the codebase"
+            })),
+            criticalIssues: [
+                {
+                    file: "src/cli.js",
+                    issue: "Missing comprehensive error handling",
+                    severity: "Medium",
+                    recommendation: "Add try-catch blocks around critical operations and provide user-friendly error messages"
+                }
+            ],
+            refactoringPlan: [
+                {
+                    step: 1,
+                    action: "Extract configuration loading logic",
+                    codeSnippetBefore: "const config = JSON.parse(fs.readFileSync('config.json'));",
+                    codeSnippetAfter: "const config = loadConfig('config.json');\n// With proper error handling and validation",
+                    benefit: "Improves error handling and makes code more testable"
+                },
+                {
+                    step: 2,
+                    action: "Replace callback with async/await",
+                    codeSnippetBefore: "fs.readFile('file.txt', (err, data) => { ... });",
+                    codeSnippetAfter: "const data = await fs.promises.readFile('file.txt');",
+                    benefit: "Reduces callback hell and improves readability"
+                }
+            ]
+        }, null, 2),
+        '```'
+    ].join('\n');
+}
+
+function buildPrompt(projectContext, projectStats) {
+    return `You are a ruthless Senior Software Architect performing a Legacy Code Audit.
+Your goal is to reduce technical debt, identify dead code, and modernize the codebase.
+
+PROJECT CONTEXT:
+${projectContext}
+
+PROJECT STATISTICS:
+- Files: ${projectStats.filesCount}
+- Context size: ${projectContext.length >= 1024 * 1024 ? (projectContext.length / 1024 / 1024).toFixed(2) + ' MB' : (projectContext.length / 1024).toFixed(2) + ' KB'}
+- Languages: ${projectStats.languages.join(', ') || 'unknown'}
+
+ANALYSIS RULES:
+1. DEAD CODE: Identify variables, functions, or files that look unused or commented out. Be specific:
+   - Provide exact file path and line number or function name
+   - Explain why it's dead (e.g., "Never called", "Commented out", "Unused import")
+   - Use "High" confidence only if you're certain, "Medium" if likely
+
+2. SECURITY: Look for hardcoded secrets, weak comparisons, or injection vulnerabilities:
+   - Hardcoded API keys, passwords, tokens
+   - SQL injection risks
+   - XSS vulnerabilities
+   - Weak cryptographic practices
+
+3. REFACTORING: Provide concrete "Before" vs "After" code examples:
+   - Don't just say "refactor this", show HOW with actual code
+   - Include complete code snippets (not just descriptions)
+   - Explain the benefit of each refactoring
+
+4. ACTIONABLE: Your steps must be clear enough for a Junior Developer to execute:
+   - Use specific file paths
+   - Provide exact line numbers when possible
+   - Give concrete git commands if applicable (e.g., "git rm unused-file.js")
+
+OUTPUT REQUIREMENTS:
+- complexityScore: 0 = perfect, 100 = chaos (be harsh but fair)
+- executiveSummary: One paragraph summarizing the codebase health
+- deadCode: At least 3-5 items if any exist, be thorough
+- criticalIssues: Focus on security and maintainability issues
+- refactoringPlan: Minimum 3 concrete steps with code examples
+
+Be ruthless but accurate. Don't make up issues that don't exist, but don't sugarcoat problems either.`;
+}
+
+async function callGeminiAPI(apiKey, modelName, prompt, options = {}) {
+    const {
+        requestTimeout = 120000,
+        maxRetries = 3,
+        retryDelay = 2000
+    } = options;
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const modelsToTry = modelName ? [modelName, ...DEFAULT_MODELS] : DEFAULT_MODELS;
+    const uniqueModels = [...new Set(modelsToTry)];
+
+    if (uniqueModels.length > 1) {
+        logInfo(`   Trying models: ${uniqueModels.slice(0, 3).join(', ')}${uniqueModels.length > 3 ? '...' : ''}`, 'gray');
+        logDebug(`All models to try: ${uniqueModels.join(', ')}`);
+    }
+
+    let result;
+    let usedModel = null;
+    let lastError = null;
+
+    const executeWithRetry = async (modelName, attempt = 1) => {
+        const cleanModelName = modelName.replace('models/', '');
+
+        try {
+            const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('API request timeout')), requestTimeout);
+            });
+
+            // Use Schema Response for structured JSON output
+            // Note: Some models may not support responseSchema, so we'll handle errors gracefully
+            let model;
+            try {
+                model = genAI.getGenerativeModel({
+                    model: cleanModelName,
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: ANALYSIS_SCHEMA,
+                        temperature: 0.2, // Low temperature for accuracy
+                    }
+                });
+            } catch (schemaError) {
+                // Fallback: if schema is not supported, use regular model
+                logDebug(`Schema Response not supported for ${cleanModelName}, using regular mode`);
+                model = genAI.getGenerativeModel({ model: cleanModelName });
+            }
+            const contentPromise = model.generateContent(prompt);
+
+            const response = await Promise.race([contentPromise, timeoutPromise]);
+            return { response, modelName: cleanModelName };
+        } catch (error) {
+            // Check if error is related to Schema Response not being supported
+            const isSchemaError = error.message && (
+                error.message.includes('responseSchema') ||
+                error.message.includes('responseMimeType') ||
+                error.message.includes('schema') ||
+                error.message.includes('400') // Bad request often means unsupported feature
+            );
+            
+            // If Schema Response failed, retry with regular model (only once)
+            if (isSchemaError && attempt === 1) {
+                logDebug(`Schema Response not supported, retrying with regular model...`);
+                try {
+                    const fallbackModel = genAI.getGenerativeModel({ model: cleanModelName });
+                    const timeoutPromise = new Promise((_, reject) => {
+                        setTimeout(() => reject(new Error('API request timeout')), requestTimeout);
+                    });
+                    const contentPromise = fallbackModel.generateContent(prompt);
+                    const response = await Promise.race([contentPromise, timeoutPromise]);
+                    return { response, modelName: cleanModelName };
+                } catch (fallbackError) {
+                    // If fallback also fails, continue with normal error handling
+                    logDebug(`Fallback model also failed: ${fallbackError.message}`);
+                }
+            }
+            
+            const isNetworkError = error.message && (
+                error.message.includes('fetch') ||
+                error.message.includes('network') ||
+                error.message.includes('ECONNREFUSED') ||
+                error.message.includes('ETIMEDOUT') ||
+                error.message.includes('ENOTFOUND') ||
+                error.message.includes('timeout') ||
+                error.message.includes('Timeout')
+            );
+
+            const isRateLimit = error.message && (
+                error.message.includes('429') ||
+                error.message.includes('rate limit') ||
+                error.message.includes('quota')
+            );
+
+            const isServerError = error.message && (
+                error.message.includes('500') ||
+                error.message.includes('502') ||
+                error.message.includes('503') ||
+                error.message.includes('504')
+            );
+
+            if ((isNetworkError || isRateLimit || isServerError) && attempt < maxRetries) {
+                const delay = retryDelay * attempt;
+                logWarn(`   ⚠️  Error (attempt ${attempt}/${maxRetries}): ${error.message}`);
+                logInfo(`   🔄 Retrying in ${delay / 1000} seconds...`, 'yellow');
+                logDebug(`Error details: ${error.stack || error.message}`);
+
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return executeWithRetry(modelName, attempt + 1);
+            }
+
+            if (error.message && (error.message.includes('404') || error.message.includes('not found'))) {
+                throw error;
+            }
+
+            throw error;
+        }
+    };
+
+    for (const modelName of uniqueModels) {
+        try {
+            if (uniqueModels.length > 1) {
+                process.stdout.write(colorize(`   Trying model: ${modelName.replace('models/', '')}... `, 'gray'));
+            }
+
+            const response = await executeWithRetry(modelName);
+            result = response.response;
+            usedModel = response.modelName;
+
+            if (uniqueModels.length > 1) {
+                console.log(colorize('✅', 'green'));
+            } else {
+                console.log(colorize(`✅ Using model: ${usedModel}\n`, 'green'));
+            }
+            break;
+        } catch (modelError) {
+            lastError = modelError;
+            if (modelError.message && (modelError.message.includes('404') || modelError.message.includes('not found'))) {
+                if (uniqueModels.length > 1) {
+                    console.log(colorize('❌', 'red'));
+                }
+                logDebug(`Model ${modelName} not found, trying next...`);
+                continue;
+            }
+            throw modelError;
+        }
+    }
+
+    if (!result || !usedModel) {
+        const errorMsg = lastError ? `\nLast error: ${lastError.message}` : '';
+        console.error(colorize('\n❌ Failed to find an available model.', 'red'));
+        console.error('Please check:');
+        console.error('  1. Is your API key correct?');
+        console.error('  2. Do you have access to Gemini API?');
+        console.error('  3. Is your internet connection working?');
+        console.error('  4. Try a different model: --model=gemini-2.5-pro');
+        if (errorMsg) {
+            logDebug(errorMsg);
+        }
+        throw new Error('Failed to find an available model');
+    }
+
+    // With Schema Response, we get clean JSON directly
+    try {
+        const responseText = result.response.text();
+        // Try to parse as JSON (should be clean JSON now)
+        const jsonData = JSON.parse(responseText);
+        
+        // Generate simple markdown summary for display (detailed formatting is done in formatters.js)
+        const markdownSummary = `# LegacyLens Analysis\n\n**Project**: ${jsonData.projectName || 'Unknown'}\n**Complexity Score**: ${jsonData.complexityScore !== undefined ? jsonData.complexityScore : 50}/100\n\n${jsonData.executiveSummary || 'Analysis complete.'}\n\n\`\`\`json\n${JSON.stringify(jsonData, null, 2)}\n\`\`\``;
+        
+        // Return both: markdown summary for display and JSON for parsing
+        return {
+            text: markdownSummary,
+            json: jsonData,
+            model: usedModel
+        };
+    } catch (parseError) {
+        // Fallback: if JSON parsing fails, return text as-is
+        logWarn('⚠️  Failed to parse JSON response, using text as fallback');
+        logDebug(`Parse error: ${parseError.message}`);
+        return {
+            text: result.response.text(),
+            json: null,
+            model: usedModel
+        };
+    }
+}
+
+module.exports = {
+    extractJsonFromResponse,
+    generateMockResponse,
+    buildPrompt,
+    callGeminiAPI,
+    DEFAULT_MODELS
+};

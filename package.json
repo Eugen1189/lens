@@ -1,0 +1,65 @@
+{
+  "name": "legacylens-cli",
+  "version": "3.1.2",
+  "description": "AI-powered CLI to analyze and cleanup legacy code. Features: .gitignore support, Schema Response, Auto-fix ready.",
+  "main": "legacylens-cli.js",
+  "bin": {
+    "legacylens": "legacylens-cli.js"
+  },
+  "scripts": {
+    "start": "node legacylens-cli.js",
+    "analyze": "node legacylens-cli.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "prepublishOnly": "echo Skipping tests for publish",
+    "prepare-publish": "node scripts/prepare-publish.js",
+    "pack-test": "npm pack --dry-run"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "commander": "^12.0.0",
+    "ignore": "^7.0.5"
+  },
+  "keywords": [
+    "legacy",
+    "code-analysis",
+    "ai",
+    "gemini",
+    "cleanup",
+    "tech-debt",
+    "refactoring",
+    "cli",
+    "code-archaeology",
+    "legacy-code",
+    "code-review",
+    "ai-analysis",
+    "code-audit",
+    "technical-debt",
+    "automated-refactoring",
+    "code-quality"
+  ],
+  "author": "LegacyLens Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Eugen1189/lens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Eugen1189/lens/issues"
+  },
+  "homepage": "https://github.com/Eugen1189/lens#readme",
+  "files": [
+    "legacylens-cli.js",
+    "src/**/*.js",
+    "README.md",
+    "CHANGELOG.md",
+    ".legacylens.json.example"
+  ],
+  "devDependencies": {
+    "jest": "^30.2.0"
+  }
+}

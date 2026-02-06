@@ -1,0 +1,22 @@
+# Test and temporary files
+src/*.html
+src/*.md
+src/.legacylens-cache.json
+src/.legacylens-filelist.json
+
+# Development files
+*.log
+.DS_Store
+coverage/
+.nyc_output/
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore

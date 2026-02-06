@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Coverage reports
+coverage/
+*.lcov
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Cache
+.legacylens-cache.json
+.legacylens-filelist.json
+
+# Test reports and generated files
+legacylens-report*.md
+legacylens-report*.html
+*-test.md
+*-test.html
+deep-audit*.md
+deep-audit*.html
+patch-*.md
+patch-*.html
+final-*.md
+final-*.html
+v3.*.md
+schema-*.html
+ignore-*.html
+real-*.html
+self-audit*.html
+
+# Environment
+.env
+.env.local
+.npmrc
+
+# Build outputs
+dist/
+build/

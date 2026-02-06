@@ -1,0 +1,32 @@
+{
+  "apiKey": "your_api_key_here",
+  "model": "gemini-2.5-flash",
+  "ignore": [
+    ".git",
+    "node_modules",
+    "dist",
+    "build",
+    ".env",
+    "__pycache__",
+    "venv",
+    ".vscode",
+    ".idea",
+    "out",
+    "custom_folder_to_ignore"
+  ],
+  "include": [
+    ".py",
+    ".js",
+    ".ts",
+    ".json",
+    ".md",
+    ".html",
+    ".css",
+    ".php",
+    ".java",
+    ".cpp"
+  ],
+  "maxFileSize": 3000,
+  "maxContextSize": 50000,
+  "outputFile": "legacylens-report.md"
+}
