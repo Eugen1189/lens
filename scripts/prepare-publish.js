@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Скрипт для підготовки до публікації на npm
- * Перевіряє всі необхідні файли та налаштування
+ * Script for preparing npm publication
+ * Checks all required files and settings
  */
 
 const fs = require('fs');
@@ -11,34 +11,41 @@ const path = require('path');
 const errors = [];
 const warnings = [];
 
-console.log('🔍 Перевірка готовності до публікації...\n');
+console.log('🔍 Checking readiness for publication...\n');
 
-// 1. Перевірка package.json
-console.log('1. Перевірка package.json...');
+// 1. Check package.json
+console.log('1. Checking package.json...');
 const packagePath = path.join(__dirname, '..', 'package.json');
 if (!fs.existsSync(packagePath)) {
-    errors.push('package.json не знайдено!');
+    errors.push('package.json not found!');
 } else {
     const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
     
-    if (!pkg.name) errors.push('package.json: відсутня назва пакету');
-    if (!pkg.version) errors.push('package.json: відсутня версія');
-    if (!pkg.description) warnings.push('package.json: відсутній опис');
-    if (!pkg.author) warnings.push('package.json: відсутній автор');
-    if (!pkg.license) warnings.push('package.json: відсутня ліцензія');
-    if (!pkg.bin || !pkg.bin.legacylens) errors.push('package.json: відсутня bin команда');
-    if (!pkg.repository || pkg.repository.url.includes('yourusername')) {
-        warnings.push('package.json: repository URL не оновлено');
+    if (!pkg.name) errors.push('package.json: missing package name');
+    if (!pkg.version) errors.push('package.json: missing version');
+    if (!pkg.description) warnings.push('package.json: missing description');
+    if (!pkg.author) warnings.push('package.json: missing author');
+    if (!pkg.license) warnings.push('package.json: missing license');
+    if (!pkg.bin || !pkg.bin.legacylens) errors.push('package.json: missing bin command');
+    // More robust repository URL validation
+    const placeholderRegex = /yourusername|example\.com|github\.com\/username/i;
+    const hasValidRepository = pkg.repository && 
+                               pkg.repository.url && 
+                               !placeholderRegex.test(pkg.repository.url) &&
+                               (pkg.repository.url.startsWith('git+https://') || pkg.repository.url.startsWith('https://'));
+    
+    if (!hasValidRepository) {
+        warnings.push('package.json: repository URL not updated or still using placeholder');
     }
     
-    console.log(`   ✅ Назва: ${pkg.name}`);
-    console.log(`   ✅ Версія: ${pkg.version}`);
-    console.log(`   ${pkg.author ? '✅' : '⚠️ '} Автор: ${pkg.author || 'не вказано'}`);
-    console.log(`   ${pkg.repository && !pkg.repository.url.includes('yourusername') ? '✅' : '⚠️ '} Repository: ${pkg.repository?.url || 'не вказано'}`);
+    console.log(`   ✅ Name: ${pkg.name}`);
+    console.log(`   ✅ Version: ${pkg.version}`);
+    console.log(`   ${pkg.author ? '✅' : '⚠️ '} Author: ${pkg.author || 'not specified'}`);
+    console.log(`   ${hasValidRepository ? '✅' : '⚠️ '} Repository: ${pkg.repository?.url || 'not specified'}`);
 }
 
-// 2. Перевірка основних файлів
-console.log('\n2. Перевірка основних файлів...');
+// 2. Check main files
+console.log('\n2. Checking main files...');
 const requiredFiles = [
     'legacylens-cli.js',
     'README.md',
@@ -51,12 +58,12 @@ requiredFiles.forEach(file => {
     if (fs.existsSync(filePath)) {
         console.log(`   ✅ ${file}`);
     } else {
-        errors.push(`Відсутній файл: ${file}`);
+        errors.push(`Missing file: ${file}`);
     }
 });
 
-// 3. Перевірка .npmignore
-console.log('\n3. Перевірка .npmignore...');
+// 3. Check .npmignore
+console.log('\n3. Checking .npmignore...');
 const npmignorePath = path.join(__dirname, '..', '.npmignore');
 if (fs.existsSync(npmignorePath)) {
     const npmignore = fs.readFileSync(npmignorePath, 'utf-8');
@@ -64,25 +71,25 @@ if (fs.existsSync(npmignorePath)) {
     const missing = shouldIgnore.filter(item => !npmignore.includes(item));
     
     if (missing.length > 0) {
-        warnings.push(`.npmignore: відсутні правила для: ${missing.join(', ')}`);
+        warnings.push(`.npmignore: missing rules for: ${missing.join(', ')}`);
     }
-    console.log('   ✅ .npmignore існує');
+    console.log('   ✅ .npmignore exists');
 } else {
-    warnings.push('.npmignore відсутній (буде використано .gitignore)');
+    warnings.push('.npmignore missing (will use .gitignore)');
 }
 
-// 4. Перевірка тестів
-console.log('\n4. Перевірка тестів...');
+// 4. Check tests
+console.log('\n4. Checking tests...');
 const testDir = path.join(__dirname, '..', '__tests__');
 if (fs.existsSync(testDir)) {
     const testFiles = fs.readdirSync(testDir).filter(f => f.endsWith('.test.js'));
-    console.log(`   ✅ Знайдено ${testFiles.length} тестових файлів`);
+    console.log(`   ✅ Found ${testFiles.length} test files`);
 } else {
-    warnings.push('Директорія __tests__ не знайдена');
+    warnings.push('__tests__ directory not found');
 }
 
-// 5. Перевірка розміру пакету
-console.log('\n5. Оцінка розміру пакету...');
+// 5. Check package size
+console.log('\n5. Estimating package size...');
 const filesInPackage = [
     'legacylens-cli.js',
     'README.md',
@@ -100,26 +107,26 @@ filesInPackage.forEach(file => {
     }
 });
 
-console.log(`   📦 Загальний розмір: ${(totalSize / 1024).toFixed(2)} KB`);
+console.log(`   📦 Total size: ${(totalSize / 1024).toFixed(2)} KB`);
 
-// Підсумок
+// Summary
 console.log('\n' + '='.repeat(50));
 if (errors.length === 0 && warnings.length === 0) {
-    console.log('✅ Всі перевірки пройдено успішно!');
-    console.log('\n📦 Готово до публікації:');
+    console.log('✅ All checks passed successfully!');
+    console.log('\n📦 Ready for publication:');
     console.log('   1. npm login');
     console.log('   2. npm publish');
 } else {
     if (errors.length > 0) {
-        console.log('❌ Критичні помилки:');
+        console.log('❌ Critical errors:');
         errors.forEach(err => console.log(`   - ${err}`));
     }
     if (warnings.length > 0) {
-        console.log('\n⚠️  Попередження:');
+        console.log('\n⚠️  Warnings:');
         warnings.forEach(warn => console.log(`   - ${warn}`));
     }
     if (errors.length > 0) {
-        console.log('\n❌ Виправте помилки перед публікацією!');
+        console.log('\n❌ Fix errors before publishing!');
         process.exit(1);
     }
 }

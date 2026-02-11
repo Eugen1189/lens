@@ -33,6 +33,7 @@ function loadCache(projectPath) {
 }
 
 function saveCache(projectPath, projectHash, report, model) {
+    const { logWarn } = require('./logger');
     const cachePath = path.join(projectPath, '.legacylens-cache.json');
     
     try {
@@ -44,8 +45,10 @@ function saveCache(projectPath, projectHash, report, model) {
             version: VERSION
         };
         fs.writeFileSync(cachePath, JSON.stringify(cacheData, null, 2), 'utf-8');
+        return true; // Return true on success
     } catch (error) {
-        // Ignore cache save errors
+        logWarn(`Failed to save cache to ${cachePath}: ${error.message}`);
+        return false; // Return false on error
     }
 }
 

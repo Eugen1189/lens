@@ -1,13 +1,15 @@
 /**
- * Тести для обробки помилок
+ * Tests for error handling
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { loadConfig, loadCache, saveCache, parseGitignore } = require('../legacylens-cli.js');
+const { loadConfig } = require('../src/utils/config');
+const { loadCache, saveCache } = require('../src/utils/cache');
+const { parseGitignore } = require('../src/core/gitignore');
 
-describe('Обробка помилок', () => {
+describe('Error handling', () => {
     let testDir;
 
     beforeEach(() => {
@@ -21,7 +23,7 @@ describe('Обробка помилок', () => {
     });
 
     describe('loadConfig', () => {
-        test('повертає null для неіснуючого файлу', () => {
+        test('returns null for non-existent file', () => {
             const config = loadConfig(testDir);
             expect(config).toBeNull();
         });
@@ -44,12 +46,12 @@ describe('Обробка помилок', () => {
     });
 
     describe('loadCache', () => {
-        test('повертає null для неіснуючого кешу', () => {
+        test('returns null for non-existent cache', () => {
             const cache = loadCache(testDir);
             expect(cache).toBeNull();
         });
 
-        test('повертає null для невалідного JSON', () => {
+        test('returns null for invalid JSON', () => {
             const cachePath = path.join(testDir, '.legacylens-cache.json');
             fs.writeFileSync(cachePath, 'invalid json', 'utf-8');
 
@@ -57,7 +59,7 @@ describe('Обробка помилок', () => {
             expect(cache).toBeNull();
         });
 
-        test('обробляє порожній JSON файл', () => {
+        test('handles empty JSON file', () => {
             const cachePath = path.join(testDir, '.legacylens-cache.json');
             fs.writeFileSync(cachePath, '{}', 'utf-8');
 
@@ -67,50 +69,53 @@ describe('Обробка помилок', () => {
     });
 
     describe('saveCache', () => {
-        test('обробляє помилки запису', () => {
-            // Створюємо read-only директорію (на Windows це складніше)
-            // Тому просто перевіряємо, що функція не падає
+        test('handles write errors', () => {
+            // Creating read-only directory is harder on Windows
+            // So we just check that function doesn't crash
             const result = saveCache('/nonexistent/path', 'hash', 'report', 'model');
             expect(typeof result).toBe('boolean');
+            expect(result).toBe(false); // Should return false on error
         });
 
-        test('зберігає кеш увалідно', () => {
+        test('saves cache successfully', () => {
             const result = saveCache(testDir, 'test-hash', 'test-report', 'test-model');
             expect(result).toBe(true);
 
             const cache = loadCache(testDir);
             expect(cache).not.toBeNull();
-            expect(cache.projectHash).toBe('test-hash');
+            expect(cache.hash).toBe('test-hash'); // Changed from projectHash to hash
             expect(cache.report).toBe('test-report');
             expect(cache.model).toBe('test-model');
         });
     });
 
     describe('parseGitignore', () => {
-        test('повертає порожній масив для неіснуючого файлу', () => {
-            const rules = parseGitignore(testDir);
-            expect(rules).toEqual([]);
+        test('returns ignore object for non-existent file', () => {
+            const ig = parseGitignore(testDir, []);
+            expect(ig).toBeDefined();
+            expect(ig.ignores('src/app.js')).toBe(false);
         });
 
-        test('обробляє помилки читання', () => {
-            // Створюємо директорію без прав на читання (складно на Windows)
-            // Тому просто перевіряємо, що функція не падає
-            const rules = parseGitignore('/nonexistent/path');
-            expect(Array.isArray(rules)).toBe(true);
+        test('handles read errors', () => {
+            // Creating directory without read permissions is hard on Windows
+            // So we just check that function doesn't crash
+            const ig = parseGitignore('/nonexistent/path', []);
+            expect(ig).toBeDefined();
         });
 
-        test('обробляє порожній .gitignore', () => {
+        test('handles empty .gitignore', () => {
             const gitignorePath = path.join(testDir, '.gitignore');
             fs.writeFileSync(gitignorePath, '', 'utf-8');
 
-            const rules = parseGitignore(testDir);
-            expect(rules).toEqual([]);
+            const ig = parseGitignore(testDir, []);
+            expect(ig).toBeDefined();
+            expect(ig.ignores('src/app.js')).toBe(false);
         });
     });
 
     describe('calculateProjectHash', () => {
-        test('обробляє порожній масив', async () => {
-            const { calculateProjectHash } = require('../legacylens-cli.js');
+        test('handles empty array', async () => {
+            const { calculateProjectHash } = require('../src/utils/cache');
             const hash = await calculateProjectHash([]);
             
             expect(hash).toBeDefined();
@@ -118,8 +123,8 @@ describe('Обробка помилок', () => {
             expect(hash.length).toBe(64); // SHA256
         });
 
-        test('обробляє null/undefined', async () => {
-            const { calculateProjectHash } = require('../legacylens-cli.js');
+        test('handles null/undefined', async () => {
+            const { calculateProjectHash } = require('../src/utils/cache');
             
             // Перевіряємо, що функція не падає
             try {

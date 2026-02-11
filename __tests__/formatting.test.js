@@ -2,50 +2,70 @@
  * Тести для функцій форматування виводу
  */
 
-const { formatAsMarkdown, formatAsHTML, formatAsJSON } = require('../legacylens-cli.js');
+const { formatAsMarkdown, formatAsJSON } = require('../src/reports/formatters');
+const { formatAsHTML } = require('../src/reports/html-template');
+const { VERSION } = require('../src/utils/constants');
 
 describe('Функції форматування', () => {
-    const sampleMarkdown = `# Заголовок
-
-## Підзаголовок
-
-Це **жирний** текст та *курсив*.
-
-\`\`\`javascript
-const code = "example";
-\`\`\`
-
-- Пункт 1
-- Пункт 2`;
+    const sampleJsonData = {
+        projectName: 'test-project',
+        complexityScore: 75,
+        executiveSummary: 'This is a **test** project with *some* issues.',
+        deadCode: [
+            {
+                file: 'src/utils.js',
+                lineOrFunction: 'function oldHelper()',
+                confidence: 'High',
+                reason: 'Never called'
+            }
+        ],
+        criticalIssues: [
+            {
+                file: 'src/app.js',
+                issue: 'Hardcoded API key',
+                severity: 'Critical',
+                recommendation: 'Move to environment variables'
+            }
+        ],
+        refactoringPlan: [
+            {
+                step: 1,
+                action: 'Extract function',
+                codeSnippetBefore: 'const x = a + b;',
+                codeSnippetAfter: 'const x = add(a, b);',
+                benefit: 'Improves readability'
+            }
+        ]
+    };
 
     describe('formatAsMarkdown', () => {
-        test('повертає markdown без змін', () => {
-            const result = formatAsMarkdown(sampleMarkdown);
-            expect(result).toBe(sampleMarkdown);
+        test('форматує JSON дані в Markdown', () => {
+            const result = formatAsMarkdown(sampleJsonData);
+            expect(result).toContain('test-project');
+            expect(result).toContain('75');
+            expect(result).toContain('This is a');
+            expect(result).toContain('Dead Code');
         });
 
-        test('обробляє порожній рядок', () => {
-            const result = formatAsMarkdown('');
-            expect(result).toBe('');
+        test('обробляє невалідні дані', () => {
+            const result = formatAsMarkdown(null);
+            expect(result).toContain('Invalid');
         });
     });
 
     describe('formatAsHTML', () => {
-        test('конвертує markdown в HTML Dashboard', () => {
-            const result = formatAsHTML(sampleMarkdown, {
+        test('конвертує JSON дані в HTML Dashboard', () => {
+            const result = formatAsHTML(sampleJsonData, {
                 model: 'gemini-2.5-flash',
                 filesCount: 10,
                 date: '2025-02-04'
             });
 
             expect(result).toContain('<!DOCTYPE html>');
-            expect(result).toContain('LegacyLens - Code Analysis Dashboard');
-            expect(result).toContain('🔍 LegacyLens');
+            expect(result).toContain('LegacyLens Audit Report');
+            expect(result).toContain('LegacyLens');
             expect(result).toContain('chart.js'); // CDN link
-            expect(result).toContain('radarChart');
-            expect(result).toContain('barChart');
-            // Check that markdown content is converted
-            expect(result).toContain('<strong>жирний</strong>');
+            expect(result).toContain('test-project');
         });
 
         test('включає метадані в HTML Dashboard', () => {
@@ -54,18 +74,17 @@ const code = "example";
                 filesCount: 5,
                 date: '2025-02-04'
             };
-            const result = formatAsHTML('Test content', metadata);
+            const result = formatAsHTML(sampleJsonData, metadata);
 
             expect(result).toContain('2025-02-04');
-            expect(result).toContain('Project Health Score');
-            expect(result).toContain('System Metrics');
+            expect(result).toContain('test-project');
+            expect(result).toContain('75'); // complexityScore
+            expect(result).toContain('LegacyLens');
         });
 
-        test('обробляє порожній контент з fallback даними', () => {
-            const result = formatAsHTML('', {});
-            expect(result).toContain('<!DOCTYPE html>');
-            expect(result).toContain('50%'); // Default risk_score
-            expect(result).toContain('Chart data unavailable'); // Default summary
+        test('обробляє невалідні дані', () => {
+            const result = formatAsHTML(null, {});
+            expect(result).toContain('Invalid data provided');
         });
     });
 
@@ -78,24 +97,24 @@ const code = "example";
                 contextSize: 5000,
                 reportSize: 2000
             };
-            const result = formatAsJSON(sampleMarkdown, metadata);
+            const result = formatAsJSON(sampleJsonData, metadata);
 
             expect(() => JSON.parse(result)).not.toThrow();
             const parsed = JSON.parse(result);
 
-            expect(parsed.version).toBe('2.1.0');
+            expect(parsed.version).toBe(VERSION);
             expect(parsed.metadata.model).toBe('gemini-2.5-flash');
             expect(parsed.metadata.filesCount).toBe(10);
-            expect(parsed.report).toBe(sampleMarkdown);
+            expect(parsed.report).toEqual(sampleJsonData);
             expect(parsed.timestamp).toBeDefined();
         });
 
         test('обробляє відсутні метадані', () => {
-            const result = formatAsJSON(sampleMarkdown, {});
+            const result = formatAsJSON(sampleJsonData, {});
             const parsed = JSON.parse(result);
 
             expect(parsed.metadata.model).toBeNull();
-            expect(parsed.report).toBe(sampleMarkdown);
+            expect(parsed.report).toEqual(sampleJsonData);
         });
     });
 });

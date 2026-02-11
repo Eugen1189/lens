@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { readFileBatch } = require('../legacylens-cli.js');
+const { readFileBatch } = require('../src/core/scanner');
 
 describe('readFileBatch', () => {
     let testDir;

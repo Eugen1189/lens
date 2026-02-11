@@ -45,7 +45,7 @@ describe('Логування', () => {
     });
 
     test('лог-файл створюється при встановленні', () => {
-        const { setLogFile } = require('../legacylens-cli.js');
+        const { setLogFile } = require('../src/utils/logger');
         
         // Функція setLogFile не експортується, тому тестуємо через інші функції
         // Або можемо перевірити, що файл створюється
@@ -57,7 +57,7 @@ describe('Логування', () => {
     });
 
     test('colorize функція працює правильно', () => {
-        const { colorize } = require('../legacylens-cli.js');
+        const { colorize } = require('../src/utils/logger');
         
         const result = colorize('test', 'red');
         expect(result).toContain('test');
@@ -65,7 +65,7 @@ describe('Логування', () => {
     });
 
     test('colorize підтримує різні кольори', () => {
-        const { colorize } = require('../legacylens-cli.js');
+        const { colorize } = require('../src/utils/logger');
         
         const colors = ['red', 'green', 'yellow', 'cyan', 'blue', 'gray'];
         
@@ -77,7 +77,7 @@ describe('Логування', () => {
     });
 
     test('colorize обробляє невідомий колір', () => {
-        const { colorize } = require('../legacylens-cli.js');
+        const { colorize } = require('../src/utils/logger');
         
         const result = colorize('test', 'unknown');
         expect(result).toContain('test');

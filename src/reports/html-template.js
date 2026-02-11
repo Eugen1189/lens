@@ -49,38 +49,29 @@ function formatAsHTML(jsonData, metadata = {}) {
         score: f.complexity || 50
     }));
 
+    // Strict schema: only use fields from ANALYSIS_SCHEMA
     const data = {
         project_name: projectName,
         version: VERSION,
-        summary: jsonData.summary || {
-            total_loc: 0,
-            risk_level: complexityScore > 70 ? 'High' : complexityScore > 40 ? 'Medium' : 'Low',
-            estimated_refactor_time: 'N/A'
-        },
         executiveSummary: executiveSummary,
         health_score: healthScore,
-        tech_debt_score: complexityScore,
         complexityScore: complexityScore,
         critical_files: criticalFiles,
-        deadCode: jsonData.deadCode || [],
-        criticalIssues: jsonData.criticalIssues || [],
-        refactoringPlan: jsonData.refactoringPlan || [],
-        dependencies: jsonData.dependencies || { nodes: [], links: [] },
-        circular_dependencies: jsonData.circular_dependencies || [],
-        isolated_modules: jsonData.isolated_modules || [],
+        deadCode: deadCode || [],
+        criticalIssues: criticalIssues || [],
+        refactoringPlan: refactoringPlan || [],
         filesCount: metadata.filesCount || 0,
-        // Support old format for metrics
-        metrics: jsonData.metrics || {
+        // Computed metrics for HTML display (not from schema, but needed for charts)
+        metrics: {
             security: complexityScore > 70 ? 30 : complexityScore > 40 ? 50 : 70,
             reliability: 100 - complexityScore,
             maintainability: healthScore,
             testing: 50
         },
-        // Support old format for languages
-        languages: jsonData.languages || [
+        // Computed languages for HTML display (not from schema, but needed for display)
+        languages: [
             { name: 'JavaScript', count: metadata.filesCount || 0 }
         ],
-        // Support old format for top_risky_files
         top_risky_files: topRiskyFiles
     };
 
@@ -101,11 +92,8 @@ function formatAsHTML(jsonData, metadata = {}) {
             .replace(/'/g, '&#039;');
     };
 
-    // Generate summary text (prefer executiveSummary from new schema)
-    const summaryText = data.executiveSummary || 
-        (typeof data.summary === 'object' 
-            ? `Project has ${data.summary.total_loc?.toLocaleString() || 0} lines of code. Risk level: ${data.summary.risk_level || 'Unknown'}. Estimated refactor time: ${data.summary.estimated_refactor_time || 'N/A'}.`
-            : (data.summary || 'No summary available.'));
+    // Use executiveSummary from schema (strict)
+    const summaryText = data.executiveSummary || 'No summary available.';
 
     return `<!DOCTYPE html>
 <html lang="en">

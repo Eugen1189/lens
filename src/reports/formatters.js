@@ -33,10 +33,10 @@ function formatAsMarkdown(jsonData, metadata = {}) {
         md += `| File | Target | Confidence | Reason |\n`;
         md += `|------|--------|------------|--------|\n`;
         deadCode.forEach(item => {
-            const file = item.file || item.path || 'Unknown';
-            const target = item.lineOrFunction || item.reason || 'Unknown location';
+            const file = item.file || 'Unknown';
+            const target = item.lineOrFunction || 'Unknown location';
             const confidence = item.confidence || 'Medium';
-            const reason = item.reason || 'No dependencies';
+            const reason = item.reason || 'No reason provided';
             md += `| \`${file}\` | \`${target}\` | **${confidence}** | ${reason} |\n`;
         });
         md += `\n`;
@@ -49,10 +49,10 @@ function formatAsMarkdown(jsonData, metadata = {}) {
     if (criticalIssues && criticalIssues.length > 0) {
         md += `## 3. 🚨 Critical Issues\n`;
         criticalIssues.forEach(issue => {
-            const issueDesc = issue.issue || issue.risk_explanation || 'Issue detected';
-            const file = issue.file || issue.path || 'Unknown';
-            const severity = issue.severity || (issue.complexity > 70 ? 'Critical' : issue.complexity > 50 ? 'High' : 'Medium');
-            const recommendation = issue.recommendation || issue.ai_fix_snippet || 'Review and fix';
+            const issueDesc = issue.issue || 'Issue detected';
+            const file = issue.file || 'Unknown';
+            const severity = issue.severity || 'Medium';
+            const recommendation = issue.recommendation || 'Review and fix';
             
             const icon = severity === 'Critical' ? '🔴' : (severity === 'High' ? '🟠' : '🟡');
             md += `### ${icon} ${issueDesc}\n`;
@@ -80,17 +80,6 @@ function formatAsMarkdown(jsonData, metadata = {}) {
     } else {
         md += `## 4. 🛠️ Actionable Refactoring Plan\n`;
         md += `No specific refactoring steps identified.\n\n`;
-    }
-
-    // Legacy format support: Dependencies (if present)
-    if (jsonData.dependencies && (jsonData.dependencies.nodes?.length > 0 || jsonData.dependencies.links?.length > 0)) {
-        md += `## 5. 🔗 Dependencies\n\n`;
-        if (jsonData.dependencies.nodes && jsonData.dependencies.nodes.length > 0) {
-            md += `**Total Modules:** ${jsonData.dependencies.nodes.length}\n\n`;
-        }
-        if (jsonData.dependencies.links && jsonData.dependencies.links.length > 0) {
-            md += `**Total Dependencies:** ${jsonData.dependencies.links.length}\n\n`;
-        }
     }
 
     // Analysis Metadata

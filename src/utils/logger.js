@@ -20,34 +20,6 @@ function colorize(text, color) {
 let logLevel = 'info'; // 'debug', 'info', 'warn', 'error'
 let logFile = null;
 
-function log(level, message, ...args) {
-    const levels = { debug: 0, info: 1, warn: 2, error: 3 };
-    if (levels[level] < levels[logLevel]) {
-        return;
-    }
-
-    const timestamp = new Date().toISOString();
-    const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${args.length > 0 ? args.join(' ') : ''}`;
-
-    if (level === 'error') {
-        console.error(colorize(logMessage, 'red'));
-    } else if (level === 'warn') {
-        console.warn(colorize(logMessage, 'yellow'));
-    } else if (level === 'debug') {
-        console.log(colorize(logMessage, 'gray'));
-    } else {
-        console.log(logMessage);
-    }
-
-    if (logFile) {
-        try {
-            fs.appendFileSync(logFile, logMessage + '\n', 'utf-8');
-        } catch (e) {
-            // Ignore log file errors
-        }
-    }
-}
-
 function logInfo(message, color = 'cyan') {
     if (logLevel === 'debug' || logLevel === 'info') {
         console.log(colorize(message, color));
@@ -94,7 +66,6 @@ function updateProgress(current, total, fileName = '') {
 
 module.exports = {
     colorize,
-    log,
     logInfo,
     logError,
     logWarn,

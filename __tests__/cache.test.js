@@ -1,13 +1,14 @@
 /**
- * Тести для функцій кешування та хешування
+ * Tests for caching and hashing functions
  */
 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { calculateProjectHash, loadCache, saveCache } = require('../legacylens-cli.js');
+const { calculateProjectHash, loadCache, saveCache } = require('../src/utils/cache');
+const { VERSION } = require('../src/utils/constants');
 
-describe('Кешування та хешування', () => {
+describe('Caching and hashing', () => {
     let testDir;
 
     beforeEach(() => {

@@ -1,6 +1,6 @@
 {
   "name": "legacylens-cli",
-  "version": "3.4.0",
+  "version": "3.5.2",
   "description": "AI-powered CLI to analyze and cleanup legacy code. Features: .gitignore support, Schema Response, Auto-fix ready.",
   "main": "legacylens-cli.js",
   "bin": {
@@ -12,7 +12,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "prepublishOnly": "echo Skipping tests for publish",
+    "prepublishOnly": "npm test",
     "prepare-publish": "node scripts/prepare-publish.js",
     "pack-test": "npm pack --dry-run"
   },
@@ -61,6 +61,9 @@
     ".legacylens.json.example"
   ],
   "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "babel-jest": "^30.2.0",
     "jest": "^30.2.0"
   }
 }

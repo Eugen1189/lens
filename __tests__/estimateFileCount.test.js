@@ -5,7 +5,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { estimateFileCount, shouldIgnore } = require('../legacylens-cli.js');
+const { estimateFileCount } = require('../src/core/scanner');
+const { parseGitignore } = require('../src/core/gitignore');
+const { DEFAULT_CONFIG } = require('../src/utils/config');
 
 describe('estimateFileCount', () => {
     let testDir;
@@ -34,7 +36,8 @@ describe('estimateFileCount', () => {
             include: ['.js', '.json', '.md']
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(4); // app.js, utils.js, package.json, README.md
     });
@@ -50,7 +53,8 @@ describe('estimateFileCount', () => {
             include: ['.js']
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(1); // Тільки app.js, node_modules ігнорується
     });
@@ -60,14 +64,15 @@ describe('estimateFileCount', () => {
         fs.mkdirSync(path.join(testDir, 'dist'), { recursive: true });
         fs.writeFileSync(path.join(testDir, 'src', 'app.js'), 'test', 'utf-8');
         fs.writeFileSync(path.join(testDir, 'dist', 'bundle.js'), 'test', 'utf-8');
+        fs.writeFileSync(path.join(testDir, '.gitignore'), 'dist/\n', 'utf-8');
 
-        const gitignoreRules = ['dist/'];
         const config = {
             ignore: [],
             include: ['.js']
         };
 
-        const count = await estimateFileCount(testDir, config, gitignoreRules);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(1); // Тільки app.js
     });
@@ -82,7 +87,8 @@ describe('estimateFileCount', () => {
             include: ['.js'] // Тільки .js файли
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(1); // Тільки app.js
     });
@@ -93,7 +99,8 @@ describe('estimateFileCount', () => {
             include: ['.js']
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(0);
     });
@@ -121,7 +128,8 @@ describe('estimateFileCount', () => {
             include: ['.js']
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(3); // app.js, main.js, helper.js
     });
@@ -135,7 +143,8 @@ describe('estimateFileCount', () => {
             include: ['.js']
         };
 
-        const count = await estimateFileCount(testDir, config, []);
+        const ig = parseGitignore(testDir, config.ignore);
+        const count = await estimateFileCount(testDir, config, ig);
 
         expect(count).toBe(1);
     });
