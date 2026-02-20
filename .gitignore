@@ -20,6 +20,8 @@ Thumbs.db
 # Cache
 .legacylens-cache.json
 .legacylens-filelist.json
+.legacylens-map.json
+.legacylens-index.json
 
 # Test reports and generated files
 legacylens-report*.md

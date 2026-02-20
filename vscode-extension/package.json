@@ -1,0 +1,130 @@
+{
+  "name": "legacylens-copilot",
+  "displayName": "LegacyLens Copilot",
+  "description": "AI-powered code cleanup and analysis directly in VS Code",
+  "version": "0.1.0",
+  "publisher": "legacylens",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "keywords": [
+    "legacy",
+    "code-analysis",
+    "ai",
+    "gemini",
+    "dead-code",
+    "refactoring",
+    "code-cleanup"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "legacylens.analyze",
+        "title": "Analyze Project",
+        "category": "LegacyLens"
+      },
+      {
+        "command": "legacylens.autoFix",
+        "title": "Auto-Fix Dead Code",
+        "category": "LegacyLens"
+      },
+      {
+        "command": "legacylens.semanticSearch",
+        "title": "Semantic Search",
+        "category": "LegacyLens"
+      },
+      {
+        "command": "legacylens.openChat",
+        "title": "Open AI Chat",
+        "category": "LegacyLens"
+      },
+      {
+        "command": "legacylens.quickFix",
+        "title": "Quick Fix",
+        "category": "LegacyLens"
+      }
+    ],
+    "views": {
+      "explorer": [
+        {
+          "id": "legacylensExplorer",
+          "name": "Legacy Explorer",
+          "when": "workspaceFolderCount > 0"
+        }
+      ],
+      "legacylens": [
+        {
+          "id": "legacylensSemanticSearch",
+          "name": "Semantic Search",
+          "when": "workspaceFolderCount > 0"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "legacylens",
+          "title": "LegacyLens",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "codeLens": [
+      {
+        "language": "javascript",
+        "id": "legacylens"
+      },
+      {
+        "language": "typescript",
+        "id": "legacylens"
+      },
+      {
+        "language": "python",
+        "id": "legacylens"
+      }
+    ],
+    "configuration": {
+      "title": "LegacyLens",
+      "properties": {
+        "legacylens.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Google Gemini API key",
+          "markdownDescription": "Your Google Gemini API key. Get one at [Google AI Studio](https://aistudio.google.com/app/apikey)"
+        },
+        "legacylens.autoAnalyze": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically analyze project on workspace open"
+        },
+        "legacylens.showCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show CodeLens overlays for dead code"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1"
+  }
+}

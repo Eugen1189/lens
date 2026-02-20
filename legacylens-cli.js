@@ -20,7 +20,13 @@ const { setupCLI } = require('./src/cli');
 // Run CLI only if file is executed directly
 if (require.main === module) {
     const program = setupCLI();
-    program.parse();
+    // Default to "analyze" when first arg is not a subcommand (legacylens . or legacylens --mock-ai)
+    const subcommands = ['analyze', 'index', 'find', 'create-api', 'auto-fix', 'get-map', 'pin-context', 'affected', 'verify', 'setup-skills'];
+    const first = process.argv[2];
+    if (!first || first.startsWith('-') || !subcommands.includes(first)) {
+        process.argv.splice(2, 0, 'analyze');
+    }
+    program.parse(process.argv);
 
     // Global error handler
     process.on('unhandledRejection', (error) => {

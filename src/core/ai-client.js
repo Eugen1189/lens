@@ -2,6 +2,7 @@
 const { GoogleGenerativeAI, SchemaType } = require("@google/generative-ai");
 const path = require('path');
 const { logInfo, logWarn, logDebug, colorize } = require('../utils/logger');
+const { DEFAULT_ENGINES } = require('./engines');
 
 // Schema definition for structured JSON response (Deep Audit Edition v3.1.0)
 const ANALYSIS_SCHEMA = {
@@ -98,6 +99,14 @@ const ANALYSIS_SCHEMA = {
                     benefit: {
                         type: SchemaType.STRING,
                         description: "Benefit of this refactoring (e.g., 'Reduces complexity', 'Improves readability', 'Fixes memory leak')"
+                    },
+                    target: {
+                        type: SchemaType.STRING,
+                        description: "Exact file or scope to change (e.g. 'src/utils/old.js', 'src/auth/')"
+                    },
+                    verification: {
+                        type: SchemaType.STRING,
+                        description: "How to verify this step (e.g. 'Run npm test', 'Run linter', 'Check build')"
                     }
                 },
                 required: ["step", "action", "codeSnippetBefore", "codeSnippetAfter", "benefit"]
@@ -107,91 +116,232 @@ const ANALYSIS_SCHEMA = {
     required: ["projectName", "complexityScore", "executiveSummary", "deadCode", "criticalIssues", "refactoringPlan"]
 };
 
+// Use models from engines system (Flash/Pro) + fallbacks for compatibility
+// Use Gemini 3 models from engines system + fallbacks for compatibility
 const DEFAULT_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.5-pro",
-    "gemini-flash-latest",
-    "gemini-pro-latest",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash-lite"
+    DEFAULT_ENGINES.flash,              // Primary: Gemini 3 Flash (workhorse, 1M context)
+    DEFAULT_ENGINES.pro,                // Secondary: Gemini 3 Pro (architect, complex reasoning)
+    "gemini-flash-latest",              // Fallback: latest Flash alias
+    "gemini-pro-latest",                // Fallback: latest Pro alias
+    "gemini-2.5-flash",                 // Fallback: older Flash
+    "gemini-2.5-pro",                   // Fallback: older Pro
+    "gemini-1.5-flash",                 // Fallback: legacy Flash
+    "gemini-1.5-pro"                    // Fallback: legacy Pro
 ];
 
 async function generateMockResponse(projectPath, files, projectStats) {
     const mockComplexityScore = files.length > 50 ? 75 : files.length > 20 ? 60 : 45;
-    
-    return [
-        '# 📊 LegacyLens (Mock) - Deep Audit Report',
-        '',
-        '## Executive Summary',
-        'This is a mock analysis for testing purposes. The codebase appears to be a CLI tool with modular structure.',
-        '',
-        '## Dead Code',
-        '- No dead code detected in mock mode.',
-        '',
-        '## Critical Issues',
-        '- **Mock Mode**: This analysis was generated without calling the AI API.',
-        '',
-        '## Refactoring Plan',
-        '- Add comprehensive test coverage.',
-        '- Implement error handling improvements.',
-        '',
-        '```json',
-        JSON.stringify({
-            projectName: path.basename(projectPath || 'Unknown'),
-            complexityScore: mockComplexityScore,
-            executiveSummary: "Mock analysis: CLI tool with modular architecture. Code quality appears moderate with room for improvement in test coverage and error handling.",
-            deadCode: files.slice(0, 2).map(f => ({
-                file: f.path,
-                lineOrFunction: "function unusedHelper()",
-                confidence: "Medium",
-                reason: "Function defined but never called in the codebase"
-            })),
-            criticalIssues: [
-                {
-                    file: "src/cli.js",
-                    issue: "Missing comprehensive error handling",
-                    severity: "Medium",
-                    recommendation: "Add try-catch blocks around critical operations and provide user-friendly error messages"
-                }
-            ],
-            refactoringPlan: [
-                {
-                    step: 1,
-                    action: "Extract configuration loading logic",
-                    codeSnippetBefore: "const config = JSON.parse(fs.readFileSync('config.json'));",
-                    codeSnippetAfter: "const config = loadConfig('config.json');\n// With proper error handling and validation",
-                    benefit: "Improves error handling and makes code more testable"
-                },
-                {
-                    step: 2,
-                    action: "Replace callback with async/await",
-                    codeSnippetBefore: "fs.readFile('file.txt', (err, data) => { ... });",
-                    codeSnippetAfter: "const data = await fs.promises.readFile('file.txt');",
-                    benefit: "Reduces callback hell and improves readability"
-                }
-            ]
-        }, null, 2),
-        '```'
-    ].join('\n');
+    return {
+        projectName: path.basename(projectPath || 'Unknown'),
+        complexityScore: mockComplexityScore,
+        executiveSummary: "Mock analysis: CLI tool with modular architecture. Code quality appears moderate with room for improvement in test coverage and error handling.",
+        deadCode: files.slice(0, 2).map(f => ({
+            file: f.path,
+            lineOrFunction: "function unusedHelper()",
+            confidence: "Medium",
+            reason: "Function defined but never called in the codebase"
+        })),
+        criticalIssues: [
+            {
+                file: "src/cli.js",
+                issue: "Missing comprehensive error handling",
+                severity: "Medium",
+                recommendation: "Add try-catch blocks around critical operations and provide user-friendly error messages"
+            }
+        ],
+        refactoringPlan: [
+            {
+                step: 1,
+                action: "Extract configuration loading logic",
+                codeSnippetBefore: "const config = JSON.parse(fs.readFileSync('config.json'));",
+                codeSnippetAfter: "const config = loadConfig('config.json');\n// With proper error handling and validation",
+                benefit: "Improves error handling and makes code more testable"
+            },
+            {
+                step: 2,
+                action: "Replace callback with async/await",
+                codeSnippetBefore: "fs.readFile('file.txt', (err, data) => { ... });",
+                codeSnippetAfter: "const data = await fs.promises.readFile('file.txt');",
+                benefit: "Reduces callback hell and improves readability"
+            }
+        ]
+    };
 }
 
-function buildPrompt(projectContext, projectStats) {
+/**
+ * Identifies suspicious/complex files from Project Map for targeted deep dive.
+ * @param {object} projectMap - Project Map with files
+ * @param {number} threshold - Complexity threshold (default: 10 exports or 20 imports)
+ * @returns {Array<{ path: string, reason: string, complexity: number }>}
+ */
+function identifySuspiciousFiles(projectMap, threshold = { exports: 10, imports: 20, signatures: 30 }) {
+    if (!projectMap || !projectMap.files) return [];
+    
+    const suspicious = [];
+    projectMap.files.forEach(file => {
+        let complexity = 0;
+        const reasons = [];
+        
+        const exportCount = file.exports 
+            ? (file.exports.named?.length || 0) + (file.exports.default ? 1 : 0)
+            : 0;
+        const importCount = file.imports?.length || 0;
+        const signatureCount = file.signatures?.length || 0;
+        
+        if (exportCount > threshold.exports) {
+            complexity += exportCount;
+            reasons.push(`high exports (${exportCount})`);
+        }
+        if (importCount > threshold.imports) {
+            complexity += importCount;
+            reasons.push(`high imports (${importCount})`);
+        }
+        if (signatureCount > threshold.signatures) {
+            complexity += signatureCount;
+            reasons.push(`many functions/classes (${signatureCount})`);
+        }
+        
+        if (complexity > 0) {
+            suspicious.push({
+                path: file.path,
+                reason: reasons.join(', '),
+                complexity,
+                exportCount,
+                importCount,
+                signatureCount
+            });
+        }
+    });
+    
+    // Sort by complexity (most complex first)
+    return suspicious.sort((a, b) => b.complexity - a.complexity).slice(0, 10); // Top 10 most complex
+}
+
+function buildPrompt(projectContext, projectStats, options = {}) {
+    const { projectMapSummary = '', semanticContext = '', projectMap = null, targetedFiles = [] } = options;
+    
+    // Build dead code hints from Project Map imports/exports if available
+    let deadCodeHints = '';
+    if (projectMap && projectMap.files && Array.isArray(projectMap.files)) {
+        const exportedButNeverImported = [];
+        const importedButNotExported = [];
+        
+        // Simple analysis: find exports that are never imported
+        const allExports = new Set();
+        const allImports = new Set();
+        
+        projectMap.files.forEach(file => {
+            // Handle exports structure: { named: [...], default: [...] } or array
+            if (file.exports) {
+                try {
+                    if (Array.isArray(file.exports)) {
+                        // Old format: array
+                        file.exports.forEach(exp => {
+                            allExports.add(`${file.path}:${exp}`);
+                        });
+                    } else if (typeof file.exports === 'object' && file.exports !== null) {
+                        // New format: { named: [...], default: [...] }
+                        if (file.exports.named) {
+                            const namedExports = Array.isArray(file.exports.named) 
+                                ? file.exports.named 
+                                : (file.exports.named instanceof Set ? Array.from(file.exports.named) : []);
+                            namedExports.forEach(exp => {
+                                if (exp) allExports.add(`${file.path}:${exp}`);
+                            });
+                        }
+                        if (file.exports.default) {
+                            allExports.add(`${file.path}:${file.exports.default} (default)`);
+                        }
+                    }
+                } catch (e) {
+                    // Skip invalid exports structure
+                    console.error(`Error processing exports for ${file.path}:`, e.message);
+                }
+            }
+            // Handle imports: can be string or array
+            if (file.imports) {
+                try {
+                    if (Array.isArray(file.imports)) {
+                        file.imports.forEach(imp => {
+                            if (imp) allImports.add(imp);
+                        });
+                    } else if (typeof file.imports === 'string') {
+                        allImports.add(file.imports);
+                    }
+                } catch (e) {
+                    // Skip invalid imports structure
+                    console.error(`Error processing imports for ${file.path}:`, e.message);
+                }
+            }
+        });
+        
+        // Find potentially dead exports (exported but never imported)
+        projectMap.files.forEach(file => {
+            if (file.exports) {
+                try {
+                    let exportsToCheck = [];
+                    if (Array.isArray(file.exports)) {
+                        exportsToCheck = file.exports;
+                    } else if (typeof file.exports === 'object' && file.exports !== null) {
+                        if (file.exports.named) {
+                            const namedExports = Array.isArray(file.exports.named) 
+                                ? file.exports.named 
+                                : (file.exports.named instanceof Set ? Array.from(file.exports.named) : []);
+                            exportsToCheck = [...namedExports];
+                        }
+                        if (file.exports.default) {
+                            exportsToCheck.push(file.exports.default);
+                        }
+                    }
+                    
+                    exportsToCheck.forEach(exp => {
+                        if (exp && !allImports.has(exp) && !allImports.has(file.path)) {
+                            exportedButNeverImported.push(`${file.path} exports "${exp}"`);
+                        }
+                    });
+                } catch (e) {
+                    // Skip invalid exports structure
+                    console.error(`Error checking dead exports for ${file.path}:`, e.message);
+                }
+            }
+        });
+        
+        if (exportedButNeverImported.length > 0) {
+            deadCodeHints = `\n\nPOTENTIAL DEAD CODE (from Project Map analysis):\n${exportedButNeverImported.slice(0, 10).join('\n')}\n(These exports may be unused - verify before marking as dead)`;
+        }
+    }
+    
+    // 🔥 LEVEL 3: Targeted Deep Dive - Add full content of suspicious files
+    let deepDiveSection = '';
+    if (targetedFiles && targetedFiles.length > 0) {
+        deepDiveSection = `\n\n🔍 TARGETED DEEP DIVE (Complex/Suspicious Files - Full Content):\n`;
+        deepDiveSection += `These files were identified as highly complex or suspicious based on Project Map analysis.\n`;
+        deepDiveSection += `Please analyze them in detail:\n\n`;
+        targetedFiles.forEach(file => {
+            deepDiveSection += `--- ${file.path} (${file.reason}) ---\n`;
+            deepDiveSection += `${file.content}\n\n`;
+        });
+    }
+    
     return `You are a ruthless Senior Software Architect performing a Legacy Code Audit.
 Your goal is to reduce technical debt, identify dead code, and modernize the codebase.
 
-PROJECT CONTEXT:
-${projectContext}
+${projectMapSummary ? `📊 PROJECT STRUCTURE MAP (Architectural Skeleton - Level 1):\n${projectMapSummary}\n\n` : ''}${semanticContext ? `${semanticContext}\n\n` : ''}📁 PROJECT CONTEXT (Compressed Source Files - Level 2):
+${projectContext}${deepDiveSection}
 
 PROJECT STATISTICS:
 - Files: ${projectStats.filesCount}
 - Context size: ${projectContext.length >= 1024 * 1024 ? (projectContext.length / 1024 / 1024).toFixed(2) + ' MB' : (projectContext.length / 1024).toFixed(2) + ' KB'}
 - Languages: ${projectStats.languages.join(', ') || 'unknown'}
+${projectMapSummary ? `- Project Map: ${projectMapSummary.length} chars (structure, imports/exports, signatures)` : ''}
 
 ANALYSIS RULES:
 1. DEAD CODE: Identify variables, functions, or files that look unused or commented out. Be specific:
+   - Use the Project Map above to check if exports are actually imported elsewhere
    - Provide exact file path and line number or function name
-   - Explain why it's dead (e.g., "Never called", "Commented out", "Unused import")
+   - Explain why it's dead (e.g., "Never called", "Commented out", "Unused import", "Exported but never imported")
    - Use "High" confidence only if you're certain, "Medium" if likely
+   ${deadCodeHints}
 
 2. SECURITY: Look for hardcoded secrets, weak comparisons, or injection vulnerabilities:
    - Hardcoded API keys, passwords, tokens
@@ -214,7 +364,13 @@ OUTPUT REQUIREMENTS:
 - executiveSummary: One paragraph summarizing the codebase health
 - deadCode: At least 3-5 items if any exist, be thorough
 - criticalIssues: Focus on security and maintainability issues
-- refactoringPlan: Minimum 3 concrete steps with code examples
+- refactoringPlan: Minimum 3 concrete steps. For EACH step include:
+  - step, action, codeSnippetBefore, codeSnippetAfter, benefit (required)
+  - target: exact file path to change (e.g. "src/utils/old.js")
+  - verification: how to verify after this step (e.g. "Run npm test", "Run lint", "Build project")
+
+REFACTORING ROADMAP (for agents): Each step must be executable in order: Step 1 → do X → verify; Step 2 → do Y → verify.
+Example: "Step 1: Delete src/legacy.js. Target: src/legacy.js. Verify: npm test. Step 2: Update imports in src/app.js. Verify: npm run build."
 
 Be ruthless but accurate. Don't make up issues that don't exist, but don't sugarcoat problems either.`;
 }
@@ -371,7 +527,7 @@ async function callGeminiAPI(apiKey, modelName, prompt, options = {}) {
         console.error('  1. Is your API key correct?');
         console.error('  2. Do you have access to Gemini API?');
         console.error('  3. Is your internet connection working?');
-        console.error('  4. Try a different model: --model=gemini-2.5-pro');
+        console.error('  4. Try a different model: --model=gemini-3-pro-preview');
         if (errorMsg) {
             logDebug(errorMsg);
         }
@@ -400,5 +556,6 @@ module.exports = {
     generateMockResponse,
     buildPrompt,
     callGeminiAPI,
+    identifySuspiciousFiles,
     DEFAULT_MODELS
 };

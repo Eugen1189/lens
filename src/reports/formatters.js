@@ -1,6 +1,7 @@
 // Report formatters module
 const { logWarn, logDebug } = require('../utils/logger');
 const { VERSION } = require('../utils/constants');
+const { generateMermaidDiagrams } = require('../core/context-builder');
 
 function formatAsMarkdown(jsonData, metadata = {}) {
     // jsonData is now always a JSON object (from Schema Response)
@@ -80,6 +81,27 @@ function formatAsMarkdown(jsonData, metadata = {}) {
     } else {
         md += `## 4. 🛠️ Actionable Refactoring Plan\n`;
         md += `No specific refactoring steps identified.\n\n`;
+    }
+
+    // Project Map Visualization (Mermaid diagrams)
+    if (metadata.projectMap) {
+        md += `---\n\n`;
+        md += `## 📊 Project Structure & Dependencies\n\n`;
+        md += `Visual representation of folder structure and import/export relationships:\n\n`;
+        try {
+            const mermaid = generateMermaidDiagrams(metadata.projectMap, {
+                maxTreeDepth: 3,
+                maxGraphFiles: 50
+            });
+            if (mermaid) {
+                md += mermaid + '\n\n';
+            } else {
+                md += `*No diagrams generated (project too small or no relationships found).*\n\n`;
+            }
+        } catch (e) {
+            logDebug(`Failed to generate Mermaid diagrams: ${e.message}`);
+            md += `*Diagram generation skipped due to error.*\n\n`;
+        }
     }
 
     // Analysis Metadata
@@ -198,10 +220,73 @@ ${html}
 </html>`;
 }
 
+/**
+ * Format output optimized for AI agents (skill-context format).
+ * Returns minimal, structured JSON that other AI agents can easily consume.
+ * Focuses on actionable insights without verbose formatting.
+ */
+function formatAsSkillContext(jsonData, metadata = {}) {
+    if (!jsonData || typeof jsonData !== 'object') {
+        return JSON.stringify({ error: 'Invalid data' }, null, 0);
+    }
+    
+    const { projectName, complexityScore, executiveSummary, deadCode, criticalIssues, refactoringPlan } = jsonData;
+    
+    // Minimal structure optimized for AI consumption
+    const skillContext = {
+        // Core metadata
+        project: projectName || 'unknown',
+        complexity: complexityScore || 0,
+        summary: executiveSummary || '',
+        
+        // Actionable items (arrays of minimal objects)
+        deadCode: (deadCode || []).map(item => ({
+            file: item.file || '',
+            target: item.lineOrFunction || '',
+            confidence: item.confidence || 'Medium',
+            reason: item.reason || ''
+        })),
+        
+        criticalIssues: (criticalIssues || []).map(issue => ({
+            issue: issue.issue || '',
+            file: issue.file || '',
+            severity: issue.severity || 'Medium',
+            fix: issue.recommendation || ''
+        })),
+        
+        refactoringPlan: (refactoringPlan || []).map(step => ({
+            step: step.step || 0,
+            action: step.action || '',
+            benefit: step.benefit || '',
+            target: step.target || null,
+            verification: step.verification || null,
+            before: step.codeSnippetBefore || null,
+            after: step.codeSnippetAfter || null
+        })),
+        // Refactoring Roadmap: ordered steps for agents (Cursor, Claude) — "Step 1: X. Step 2: Y. Verify: Z"
+        roadmap: (refactoringPlan || []).map(step => ({
+            step: step.step || 0,
+            line: `Step ${step.step || 0}: ${step.action || ''}${step.target ? `. Target: ${step.target}` : ''}${step.verification ? `. Verify: ${step.verification}` : ''}`
+        })),
+        
+        // Metadata for context
+        meta: {
+            model: metadata.model || null,
+            filesCount: metadata.filesCount || 0,
+            executionTime: metadata.executionTime || null,
+            timestamp: new Date().toISOString()
+        }
+    };
+    
+    // Return compact JSON (no pretty printing to save tokens)
+    return JSON.stringify(skillContext, null, 0);
+}
+
 module.exports = {
     formatAsMarkdown,
     formatAsJSON,
     formatAsXML,
     formatAsPlainText,
-    formatAsPDF
+    formatAsPDF,
+    formatAsSkillContext
 };
