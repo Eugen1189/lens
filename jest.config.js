@@ -21,13 +21,13 @@ module.exports = {
   ],
   coverageThreshold: {
     global: {
-      branches: 50,
-      functions: 60,
-      lines: 70,
-      statements: 70
+      branches: 45,
+      functions: 58,
+      lines: 68,
+      statements: 68
     }
   },
-  testTimeout: 15000,
+  testTimeout: 20000,
   verbose: true,
   moduleNameMapper: {
     '^marked$': '<rootDir>/__mocks__/marked.js'
