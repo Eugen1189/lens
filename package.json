@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node legacylens-cli.js",
     "analyze": "node legacylens-cli.js",
+    "lint": "echo No linter configured",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
